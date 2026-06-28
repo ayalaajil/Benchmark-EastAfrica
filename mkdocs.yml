@@ -1,0 +1,60 @@
+site_name: East Africa AI Weather Benchmark
+site_description: Probabilistic benchmark of ML weather models for daily rainfall over East Africa
+site_url: https://ayalaajil.github.io/Benchmark-EastAfrica
+repo_url: https://github.com/ayalaajil/Benchmark-EastAfrica
+repo_name: ayalaajil/Benchmark-EastAfrica
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: teal
+      accent: cyan
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - scheme: slate
+      primary: teal
+      accent: cyan
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.indexes
+    - content.code.copy
+    - search.highlight
+
+nav:
+  - Home: index.md
+  - Pipeline: pipeline.md
+  - Experimental Setup: experimental-setup.md
+  - Results:
+    - Overview: results/index.md
+    - Deterministic Skill: results/deterministic-skill.md
+    - Probabilistic Calibration: results/probabilistic-calibration.md
+    - Skill vs Climatology: results/skill-vs-climatology.md
+    - Event-Based Skill: results/event-based.md
+  - Reproducibility: reproducibility.md
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+
+plugins:
+  - search

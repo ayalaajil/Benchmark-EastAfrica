@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "benchmark-ea"
+version = "0.1.0"
+description = "Multi-model probabilistic benchmark for daily rainfall over East Africa"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "pandas",
+    "xarray",
+    "xesmf",
+    "zarr",
+    "cartopy",
+    "shapely",
+    "properscoring",
+    "requests",
+    "tqdm",
+    "matplotlib",
+    # GCS access (ARCO-ERA5 + model checkpoints)
+    "gcsfs>=2023.6",
+    "google-cloud-storage",
+]
+
+[project.optional-dependencies]
+# JAX + deep-learning deps are environment-specific (CUDA version matters).
+# Install these manually before running ML model adapters:
+#   pip install "graphcast @ git+https://github.com/google-deepmind/graphcast"
+#   pip install dm-haiku "jax[cuda12_pip]" scikit-learn tabulate
+# FourCastNet additionally requires:
+#   pip install "modulus[all]" earth2mip
+dev = ["jupyter", "ipykernel", "pytest"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["benchmark_ea*"]
+
+[project.scripts]
+benchmark-ea = "benchmark_ea.run:main"

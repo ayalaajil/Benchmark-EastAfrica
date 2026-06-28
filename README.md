@@ -1,0 +1,104 @@
+# East Africa AI Weather-Model Benchmark
+
+Benchmarks machine-learning weather forecast systems — **GenCast** (diffusion
+ensemble), **GraphCast** (deterministic GNN), **FourCastNet v2 +
+PrecipitationAFNO** (deterministic SFNO) — against a **climatology baseline**
+over East Africa, verified against **CHIRPS**, **ERA5**, and **TAMSAT**.
+
+See [EXPERIMENTAL_SETUP.md](EXPERIMENTAL_SETUP.md) for domain, models, references,
+and metrics.
+
+## Layout
+
+```
+benchmark_ea/            inference package
+  run.py                 single inference entry point (CLI)
+  config.py              BenchmarkConfig (grid, dates, saving options)
+  regrid.py              shared regrid/subset to the EA 1° grid
+  models/                one adapter per model (gencast, graphcast, fourcastnet, climatology)
+  truth/                 observation loaders (chirps, era5, tamsat)
+run_verification.py      verification / analysis → mam2024_analysis_outputs/
+run_inference.sh         env wrapper (single GPU); forwards all args to benchmark_ea.run
+run_inference_parallel.sh  multi-GPU launcher (one model per GPU)
+```
+
+## Running inference
+
+Inference is driven by the single entry point `benchmark_ea.run`. Launch it
+through `run_inference.sh`, which activates the `aim-graphcast` conda env and
+sets up `LD_LIBRARY_PATH`:
+
+```bash
+# Precipitation only (default) — smallest output
+./run_inference.sh --models gencast graphcast fourcastnet climatology \
+    --start 2024-01-01 --end 2024-12-24 --lead-days 1 3 5 7
+```
+
+### Saving all variables
+
+The same script saves every model variable, regridded/subset to the EA 1° grid,
+via `--save-variables all`. For ensemble models, `--extra-var-members` controls
+how many members are kept for the **non-precip** fields (precipitation is always
+kept for every member):
+
+```bash
+# All variables, ensemble MEAN for non-precip fields (precip = all members)
+./run_inference.sh --models gencast graphcast fourcastnet \
+    --save-variables all --extra-var-members mean
+
+# All variables, EVERY ensemble member (full fidelity, large)
+./run_inference.sh --models gencast \
+    --save-variables all --extra-var-members all
+```
+
+Key flags: `--models --start --end --lead-days --save-variables
+--extra-var-members --n-members --output-dir --overwrite`. Run
+`./run_inference.sh --help` for the full list.
+
+Multi-GPU (one model per GPU) — same options via environment variables:
+
+```bash
+SAVE_VARIABLES=all EXTRA_VAR_MEMBERS=mean ./run_inference_parallel.sh
+```
+
+Each init date is written to `<output-dir>/<model>/pred_YYYY-MM-DD.zarr`
+(default `data/predictions`). Complete files are skipped unless `--overwrite`.
+
+## Verification
+
+```bash
+python run_verification.py --pred-dir data/predictions \
+    --start 2024-03-01 --end 2024-05-31 --models gencast graphcast fourcastnet
+```
+
+Verification reads only `total_precipitation`, so it works on both precip-only
+and all-variable prediction stores.
+
+**Climatology baseline / CRPSS.** If `<pred-dir>/climatology/` exists, the
+climatology 21-member baseline is loaded automatically and used as the reference
+for the CRPS skill score:
+
+* `crpss_vs_climatology_by_model_obs_lead.csv` — CRPSS per model × reference × lead
+* `crpss_maps_vs_climatology_chirps.png` — per-cell CRPSS maps (one row per lead)
+
+`CRPSS = 1 - CRPS_model / CRPS_climatology` (> 0 = beats climatology). Generate
+the baseline first:
+
+```bash
+./run_inference.sh --models climatology --start 2024-01-01 --end 2024-12-24 \
+    --output-dir data/predictions
+```
+
+## Tests
+
+```bash
+PYTHONNOUSERSITE=1 /home/ubuntu/miniconda3/envs/aim-graphcast/bin/python \
+    -m pytest tests/ -q --assert=plain -p no:cacheprovider
+```
+
+## Notes
+
+* `data/predictions/` currently holds **stale, global-grid** zarrs from an
+  earlier code version, and `data/predictions-Rainfall-Only/` holds the complete
+  but precip-only 2024 run. Before regenerating into `data/predictions`, clear or
+  archive the stale files — `run_verification.py` will refuse to mix grids.
