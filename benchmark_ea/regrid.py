@@ -35,8 +35,14 @@ def to_ea_grid(
     canonical 1° grid (``config.lat_vals`` × ``config.lon_vals``).
 
     Works on a DataArray or a whole Dataset; all non-spatial dims (sample, time,
-    level, …) are preserved. Source lat may be ascending or descending.
+    level, …) are preserved. Source lat may be ascending or descending, and may
+    use the ``latitude``/``longitude`` coordinate names (e.g. NeuralGCM).
     """
+    # Normalise coordinate names → lat / lon
+    ren = {k: v for k, v in (("longitude", "lon"), ("latitude", "lat"))
+           if k in obj.dims or k in obj.coords}
+    if ren:
+        obj = obj.rename(ren)
     obj = _ensure_ascending_lat(obj)
     obj = obj.sel(
         lat=slice(config.lat_min - 0.5, config.lat_max + 0.5),
@@ -87,9 +93,16 @@ def extra_vars_to_canonical(
         ds = ds.expand_dims({sample_dim: [0]})
 
     # Instantaneous snapshot valid at each lead day, stacked on lead_day.
+    # The ``time`` coord may be a timedelta-from-init (GenCast/GraphCast/FCN) or
+    # an absolute datetime (NeuralGCM); build the selector to match.
+    time_is_delta = np.issubdtype(np.asarray(ds["time"].values).dtype, np.timedelta64)
     per_lead = []
     for lead in config.lead_days:
-        snap = ds.sel(time=np.timedelta64(int(lead) * 24, "h"), method="nearest")
+        if time_is_delta:
+            sel = np.timedelta64(int(lead) * 24, "h")
+        else:
+            sel = np.datetime64(date) + np.timedelta64(int(lead) * 24, "h")
+        snap = ds.sel(time=sel, method="nearest")
         per_lead.append(snap.drop_vars("time", errors="ignore"))
 
     stacked = xr.concat(per_lead, dim="lead_day").assign_coords(
@@ -98,7 +111,10 @@ def extra_vars_to_canonical(
     stacked = to_ea_grid(stacked, config)
     stacked = stacked.expand_dims({"init_time": [np.datetime64(date, "ns")]})
 
-    # Canonical leading dim order: init_time, sample, lead_day, …
+    # Canonical dim order: init_time, sample, lead_day, [level/…], lat, lon.
+    # Force lat/lon to be the trailing dims in that order — NeuralGCM emits
+    # (lon, lat), so without this they would be transposed in the saved store.
     lead_order = [d for d in ("init_time", sample_dim, "lead_day") if d in stacked.dims]
-    rest = [d for d in stacked.dims if d not in lead_order]
-    return stacked.transpose(*lead_order, *rest)
+    tail = [d for d in ("lat", "lon") if d in stacked.dims]
+    mid  = [d for d in stacked.dims if d not in lead_order and d not in tail]
+    return stacked.transpose(*lead_order, *mid, *tail)

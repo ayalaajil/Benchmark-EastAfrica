@@ -50,15 +50,28 @@ def download(year: int, cache_dir: Union[str, Path]) -> Path:
     url = _BASE_URL + _annual_filename(year)
     print(f"Downloading CHIRPS {year}  →  {dest.name}  ({url})")
 
-    with requests.get(url, stream=True, timeout=600) as r:
-        r.raise_for_status()
-        total = int(r.headers.get("content-length", 0))
-        with open(dest, "wb") as fh, tqdm(
-            total=total, unit="B", unit_scale=True, desc=str(year)
-        ) as bar:
-            for chunk in r.iter_content(chunk_size=1 << 20):
-                fh.write(chunk)
-                bar.update(len(chunk))
+    # Write to a temporary file and atomically rename on success, so an
+    # interrupted download is never left behind looking like a complete file
+    # (the existence check above trusts that any dest is whole).
+    tmp = dest.with_suffix(dest.suffix + ".part")
+    try:
+        with requests.get(url, stream=True, timeout=600) as r:
+            r.raise_for_status()
+            total = int(r.headers.get("content-length", 0))
+            with open(tmp, "wb") as fh, tqdm(
+                total=total, unit="B", unit_scale=True, desc=str(year)
+            ) as bar:
+                for chunk in r.iter_content(chunk_size=1 << 20):
+                    fh.write(chunk)
+                    bar.update(len(chunk))
+        if total and tmp.stat().st_size != total:
+            raise IOError(
+                f"CHIRPS {year}: incomplete download "
+                f"({tmp.stat().st_size} of {total} bytes)"
+            )
+        tmp.replace(dest)
+    finally:
+        tmp.unlink(missing_ok=True)
 
     return dest
 
@@ -113,6 +126,61 @@ def load(
     regridded = _conservative_regrid(combined, lat, lon, cache_dir).astype(np.float32)
     regridded.attrs.update({"source": "CHIRPS v2.0", "units": "mm/day", "url": _BASE_URL})
     return regridded
+
+
+def _target_grid_hash(lat: np.ndarray, lon: np.ndarray) -> str:
+    h = hashlib.md5()
+    h.update(np.asarray(lat, dtype=np.float64).tobytes())
+    h.update(np.asarray(lon, dtype=np.float64).tobytes())
+    return h.hexdigest()[:12]
+
+
+def load_year_ea(
+    year: int,
+    lat:  np.ndarray,
+    lon:  np.ndarray,
+    cache_dir: Union[str, Path],
+    *,
+    download_missing: bool = True,
+) -> xr.DataArray:
+    """
+    Load ONE year of CHIRPS already regridded to the EA target grid, caching only
+    the tiny regridded result (~1 MB) and DISCARDING the ~1 GB global annual file.
+
+    Intended for the climatology *reference years* (2000–2020), so we never store
+    21 global CHIRPS files at once. The expensive global download happens once per
+    year, is cropped+regridded, the small result is cached as
+    ``chirps_ea1deg_<year>_<gridhash>.nc``, and the global file is deleted.
+
+    This is a SEPARATE path from ``load()`` — verification still calls ``load()``
+    and is completely unaffected (its CHIRPS-2024 global file is left intact).
+    """
+    cache_dir = Path(cache_dir)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    ea_cache = cache_dir / f"chirps_ea1deg_{year}_{_target_grid_hash(lat, lon)}.nc"
+    if ea_cache.exists():
+        da = xr.open_dataarray(ea_cache)
+        da.load()                       # detach from file handle
+        return da
+
+    glob_path = cache_dir / _annual_filename(year)
+    if not glob_path.exists():
+        if not download_missing:
+            raise FileNotFoundError(
+                f"CHIRPS {year} not cached (no EA cache, no global file). "
+                "Pass download_missing=True."
+            )
+        download(year, cache_dir)
+
+    da = _open_and_subset(glob_path, lat, lon)
+    da = _conservative_regrid(da, lat, lon, cache_dir).astype(np.float32)
+    da = da.sel(time=slice(f"{year}-01-01", f"{year}-12-31"))
+    da.attrs.update({"source": "CHIRPS v2.0", "units": "mm/day", "url": _BASE_URL})
+
+    da.to_netcdf(ea_cache)              # tiny (~1 MB)
+    glob_path.unlink(missing_ok=True)   # discard the ~1 GB global file
+    return da
 
 
 def _open_and_subset(path: Path, lat: np.ndarray, lon: np.ndarray) -> xr.DataArray:

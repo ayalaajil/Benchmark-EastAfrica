@@ -42,7 +42,13 @@ _ADAPTERS: dict[str, str] = {
     "graphcast":   "benchmark_ea.models.graphcast:GraphCastAdapter",
     "fourcastnet": "benchmark_ea.models.fourcastnet:FourCastNetAdapter",
     "climatology": "benchmark_ea.models.climatology:ClimatologyAdapter",
+    "neuralgcm":   "benchmark_ea.models.neuralgcm:NeuralGCMAdapter",
 }
+
+# Models run by default. NeuralGCM is selectable (--models neuralgcm) but kept
+# out of the default set: it needs a dedicated env (separate JAX/dinosaur) and
+# isn't installed alongside GraphCast/GenCast.
+_DEFAULT_MODELS = ["gencast", "graphcast", "fourcastnet", "climatology"]
 
 
 def _load_adapter(name: str):
@@ -56,7 +62,7 @@ def parse_args(argv=None) -> argparse.Namespace:
         description="East Africa AI weather model benchmark — inference runner",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    p.add_argument("--models", nargs="+", default=list(_ADAPTERS.keys()),
+    p.add_argument("--models", nargs="+", default=_DEFAULT_MODELS,
                    choices=list(_ADAPTERS.keys()),
                    help="Models to run inference for")
     p.add_argument("--start", default="2024-01-01", help="First init date (YYYY-MM-DD)")
@@ -114,8 +120,8 @@ def main(argv=None) -> None:
         print(f"\n{head}\nModel: {model_name}\n{head}")
         try:
             out_dir = adapter.run_inference(config)
-        except NotImplementedError as exc:
-            print(f"  [SKIP — inference not implemented] {exc}")
+        except (NotImplementedError, ImportError) as exc:
+            print(f"  [SKIP — {type(exc).__name__}] {exc}")
             continue
         print(f"  Done → {out_dir}")
 

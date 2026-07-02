@@ -7,7 +7,7 @@ This gives a proper probabilistic baseline with the same spatial coverage
 as the verification data — strictly out-of-sample relative to the
 evaluation year.
 
-The resulting ensemble has one member per reference year (default: 2000–2020,
+The resulting ensemble has one member per reference year (default: 2000-2020,
 21 members).
 
 Output format follows the canonical benchmark zarr spec (models/base.py):
@@ -46,16 +46,27 @@ class ClimatologyAdapter(ModelAdapter):
         out_dir = self.predictions_path(config)
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        print(f"Loading CHIRPS for {len(self.ref_years)} reference years …")
-        ref_data = self._load_ref_data(config)
-
         init_times = pd.date_range(config.eval_start, config.eval_end, freq="D")
         max_lead   = max(config.lead_days)
 
-        for init_time in init_times:
-            zarr_path = out_dir / f"pred_{init_time.strftime('%Y-%m-%d')}.zarr"
-            if zarr_path.exists() and not config.overwrite:
-                continue
+        def _zarr_path(t):
+            return out_dir / f"pred_{t.strftime('%Y-%m-%d')}.zarr"
+
+        # Resume-friendly: figure out which init dates still need writing BEFORE
+        # any expensive CHIRPS download/load. If everything is already present,
+        # return immediately rather than re-downloading ~20 GB of reference years.
+        pending = [t for t in init_times
+                   if config.overwrite or not _zarr_path(t).exists()]
+        if not pending:
+            print(f"Climatology: all {len(init_times)} files present → nothing to do.")
+            return out_dir
+        print(f"Climatology: {len(pending)} of {len(init_times)} init dates to write.")
+
+        print(f"Loading CHIRPS for {len(self.ref_years)} reference years …")
+        ref_data = self._load_ref_data(config)
+
+        for n, init_time in enumerate(pending, 1):
+            zarr_path = _zarr_path(init_time)
 
             # (n_leads, n_members, lat, lon)
             lead_slices = []
@@ -87,21 +98,30 @@ class ClimatologyAdapter(ModelAdapter):
                 }
             )
             ds.to_zarr(zarr_path, mode="w")
+            if n % 30 == 0 or n == len(pending):
+                print(f"  {n}/{len(pending)} written  (latest {init_time.date()})")
 
-        print(f"Climatology written → {out_dir}  ({len(init_times)} files)")
+        print(f"Climatology written → {out_dir}  ({len(pending)} new files)")
         return out_dir
 
     def _load_ref_data(self, config: BenchmarkConfig) -> xr.DataArray:
-        """Load all reference-year CHIRPS data into a single DataArray."""
+        """
+        Load all reference-year CHIRPS data into a single DataArray.
+
+        Uses the lean per-year loader (``chirps_io.load_year_ea``): each year's
+        global file is downloaded, cropped+regridded to the EA grid, cached as a
+        ~1 MB file, and the ~1 GB global file is then DISCARDED. So we never store
+        the 21 global reference files. (Verification's ``chirps_io.load`` path is
+        untouched.)
+        """
         slices = []
         for year in self.ref_years:
             try:
-                da = chirps_io.load(
-                    start=f"{year}-01-01",
-                    end=f"{year}-12-31",
-                    lat=config.lat_vals,
-                    lon=config.lon_vals,
-                    cache_dir=config.chirps_cache_dir,
+                da = chirps_io.load_year_ea(
+                    year,
+                    config.lat_vals,
+                    config.lon_vals,
+                    config.chirps_cache_dir,
                     download_missing=True,
                 )
                 slices.append(da)
@@ -119,10 +139,16 @@ class ClimatologyAdapter(ModelAdapter):
 def _doy_members(da: xr.DataArray, doy: int) -> np.ndarray:
     """
     Return all observations with the given day-of-year as a numpy array.
-    Falls back to doy-1 for doy=366 (non-leap reference years).
+
+    DOY 366 (Dec 31 in a leap year) is collapsed to 365 so that *every*
+    reference year contributes exactly one member — otherwise only leap
+    reference years would match DOY 366, giving a member count that differs
+    from the other lead days and breaking the downstream ``np.stack``.
     """
+    if doy == 366:
+        doy = 365
     mask = da.time.dt.dayofyear == doy
     if not mask.any():
-        # Leap-day fallback
+        # Defensive fallback: no year has this DOY at all.
         mask = da.time.dt.dayofyear == (doy - 1)
     return da.sel(time=mask).values  # (n_years, lat, lon)
