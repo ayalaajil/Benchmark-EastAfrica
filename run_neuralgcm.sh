@@ -34,9 +34,8 @@ fi
 # ── Environment ───────────────────────────────────────────────────────────────
 # Use ONLY this env's packages (block ~/.local from shadowing its JAX/cuDNN).
 export PYTHONNOUSERSITE=1
-# Point the loader at THIS env's bundled NVIDIA libs (matching jax[cuda12] 0.6.2),
-# so cuDNN resolves correctly (the earlier "Unable to load cuDNN" failure was a
-# cuDNN/JAX version mismatch from the shared env).
+
+
 export LD_LIBRARY_PATH=\
 ${SITE}/nvidia/cudnn/lib:\
 ${SITE}/nvidia/cublas/lib:\

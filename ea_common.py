@@ -11,6 +11,7 @@ import pandas as pd
 import xarray as xr
 
 sys.path.insert(0, os.path.abspath("."))
+from benchmark_ea import analysis_io
 from benchmark_ea.config import BenchmarkConfig
 from benchmark_ea.truth import chirps as chirps_io
 from benchmark_ea.truth import tamsat as tamsat_io
@@ -25,54 +26,80 @@ INIT_DATES = pd.date_range(START, END, freq="D")
 _TRUTH = {"chirps": (chirps_io, "chirps"), "tamsat": (tamsat_io, "tamsat")}
 
 
+# These three loaders now live in benchmark_ea.analysis_io (single source of
+# truth). The thin wrappers below preserve this module's original call
+# signatures (no-arg load_predictions, MAM date window, chirps/tamsat) so the
+# standalone acc/ssr scripts keep working unchanged. The original bodies are
+# kept (commented out) beneath each wrapper for reference.
+
 def load_predictions():
     """{model: DataArray(init_time, sample, lead_day, lat, lon)} of precip."""
-    preds = {}
-    for m in MODELS:
-        files = sorted(glob.glob(f"data/predictions/{m}/pred_2024-*.zarr"))
-        preds[m] = xr.concat([xr.open_zarr(f)["total_precipitation"] for f in files],
-                             dim="init_time")
-    return preds
+    return analysis_io.load_predictions("data/predictions", MODELS)
 
 
 def load_truth(name="chirps"):
-    """
-    Load a truth/climatology source on the model grid.
-
-    Returns
-    -------
-    obs_2d : {date: (lat, lon) array}  daily rainfall, NaN over ocean
-    lat, lon : 1-D coordinate arrays
-    """
-    name = name.lower()
-    if name not in _TRUTH:
-        raise ValueError(f"truth must be one of {list(_TRUTH)}, got {name!r}")
-    io, subdir = _TRUTH[name]
+    """Load a truth/climatology source on the model grid (MAM window)."""
     cfg = BenchmarkConfig()
-    da = io.load(START, OBS_END, cfg.lat_vals, cfg.lon_vals,
-                 f"{cfg.data_dir}/{subdir}", download_missing=False)
-    obs_2d = {pd.Timestamp(t).date(): da.sel(time=t).values for t in da.time.values}
-    return obs_2d, da.lat.values, da.lon.values
+    return analysis_io.load_truth(name, START, OBS_END, cfg.lat_vals, cfg.lon_vals,
+                                  cfg.data_dir, download_missing=False)
 
 
 def gather_pairs(preds, obs_2d, model, lead):
-    """Align a model's forecasts with truth at a given lead day.
+    """Align a model's forecasts with truth at a given lead day (keeps the grid)."""
+    return analysis_io.gather_pairs(preds, model, obs_2d, INIT_DATES, lead)
 
-    Returns
-    -------
-    fc_all : (case, sample, lat, lon)
-    ob_all : (case, lat, lon)
-    """
-    fc_da = preds[model].sel(lead_day=lead)
-    fcs, obs = [], []
-    for init in INIT_DATES:
-        vd = (init + pd.Timedelta(days=lead)).date()
-        if vd not in obs_2d:
-            continue
-        try:
-            fc = fc_da.sel(init_time=init).values
-        except KeyError:
-            continue
-        fcs.append(fc)
-        obs.append(obs_2d[vd])
-    return np.stack(fcs), np.stack(obs)
+
+# ── Original implementations — superseded by benchmark_ea.analysis_io ──────────
+# Kept (commented out, not deleted) for reference.
+#
+# def load_predictions():
+#     """{model: DataArray(init_time, sample, lead_day, lat, lon)} of precip."""
+#     preds = {}
+#     for m in MODELS:
+#         files = sorted(glob.glob(f"data/predictions/{m}/pred_2024-*.zarr"))
+#         preds[m] = xr.concat([xr.open_zarr(f)["total_precipitation"] for f in files],
+#                              dim="init_time")
+#     return preds
+#
+#
+# def load_truth(name="chirps"):
+#     """
+#     Load a truth/climatology source on the model grid.
+#
+#     Returns
+#     -------
+#     obs_2d : {date: (lat, lon) array}  daily rainfall, NaN over ocean
+#     lat, lon : 1-D coordinate arrays
+#     """
+#     name = name.lower()
+#     if name not in _TRUTH:
+#         raise ValueError(f"truth must be one of {list(_TRUTH)}, got {name!r}")
+#     io, subdir = _TRUTH[name]
+#     cfg = BenchmarkConfig()
+#     da = io.load(START, OBS_END, cfg.lat_vals, cfg.lon_vals,
+#                  f"{cfg.data_dir}/{subdir}", download_missing=False)
+#     obs_2d = {pd.Timestamp(t).date(): da.sel(time=t).values for t in da.time.values}
+#     return obs_2d, da.lat.values, da.lon.values
+#
+#
+# def gather_pairs(preds, obs_2d, model, lead):
+#     """Align a model's forecasts with truth at a given lead day.
+#
+#     Returns
+#     -------
+#     fc_all : (case, sample, lat, lon)
+#     ob_all : (case, lat, lon)
+#     """
+#     fc_da = preds[model].sel(lead_day=lead)
+#     fcs, obs = [], []
+#     for init in INIT_DATES:
+#         vd = (init + pd.Timedelta(days=lead)).date()
+#         if vd not in obs_2d:
+#             continue
+#         try:
+#             fc = fc_da.sel(init_time=init).values
+#         except KeyError:
+#             continue
+#         fcs.append(fc)
+#         obs.append(obs_2d[vd])
+#     return np.stack(fcs), np.stack(obs)
