@@ -22,6 +22,26 @@ run_inference.sh         env wrapper (single GPU); forwards all args to benchmar
 run_inference_parallel.sh  multi-GPU launcher (one model per GPU)
 ```
 
+## Environment
+
+Two conda environments are used, pinned as lockfiles under `envs/`:
+
+```bash
+# GenCast / GraphCast / FourCastNet v2 + verification
+conda env create -f envs/aim-graphcast.yml
+conda activate aim-graphcast
+pip install -e .            # install this repo (benchmark-ea)
+
+# NeuralGCM runs in its own env (incompatible JAX/dinosaur stack)
+conda env create -f envs/neuralgcm.yml
+```
+
+Both `.yml` files are exact-version snapshots of the working environments (no
+build strings). The core Python deps are also lower-bound pinned in
+`pyproject.toml`; the `envs/` lockfiles are the authoritative reproducible spec.
+A few ML packages (graphcast, earth2mip, modulus, jraph, dinosaur) are installed
+from Git/source — see the header notes in each `envs/*.yml`.
+
 ## Running inference
 
 Inference is driven by the single entry point `benchmark_ea.run`. Launch it
