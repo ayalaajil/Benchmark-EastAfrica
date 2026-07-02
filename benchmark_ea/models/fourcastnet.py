@@ -55,6 +55,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
+from benchmark_ea import regrid
 from benchmark_ea.config import BenchmarkConfig
 from benchmark_ea.models.base import ModelAdapter
 
@@ -419,25 +420,20 @@ def _to_canonical(
             coords={"lat": prec.lat, "lon": prec.lon},
             dims=["lat", "lon"],
         )
-        # Flip descending lat to ascending so interp works correctly
-        if float(step_da.lat[0]) > float(step_da.lat[-1]):
-            step_da = step_da.isel(lat=slice(None, None, -1))
+        lead_arrays.append(step_da)   # native 0.25° (lat, lon)
 
-        step_da = (
-            step_da
-            .sel(
-                lat=slice(config.lat_min - 0.5, config.lat_max + 0.5),
-                lon=slice(config.lon_min - 0.5, config.lon_max + 0.5),
-            )
-            .interp(
-                lat=config.lat_vals.astype(np.float64),
-                lon=config.lon_vals.astype(np.float64),
-                method="linear",
-            )
-        )
-        lead_arrays.append(step_da.values)   # (lat, lon)
+    # Native 0.25° daily totals → EA 1° grid via the shared mass-conserving
+    # operator (same as the observations). Ascending-lat and bbox subsetting are
+    # handled inside conservative_regrid; done once for all leads.
+    native = xr.concat(lead_arrays, dim="lead_day").assign_coords(
+        lead_day=list(config.lead_days)
+    )
+    ea = regrid.conservative_regrid(
+        native, config.lat_vals, config.lon_vals, config.regrid_weights_dir,
+        tag="fourcastnet_v2", subset_buffer=4.0,
+    ).transpose("lead_day", "lat", "lon")
 
-    stacked = np.stack(lead_arrays, axis=0)[np.newaxis, np.newaxis]  # (1,1,n_lead,lat,lon)
+    stacked = ea.values[np.newaxis, np.newaxis]  # (1,1,n_lead,lat,lon)
 
     return xr.Dataset({
         "total_precipitation": xr.DataArray(

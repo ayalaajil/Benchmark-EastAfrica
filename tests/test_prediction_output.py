@@ -141,3 +141,54 @@ def test_config_validates_save_options():
         BenchmarkConfig(save_variables="bogus")
     with pytest.raises(ValueError):
         BenchmarkConfig(extra_var_members="bogus")
+
+
+# ── Conservative regridding (shared model/obs precip operator) ────────────────
+
+pytest.importorskip("xesmf")
+
+
+def _fine_precip_da(cfg):
+    """A positive 0.25° 'rainfall' field whose outer cell bounds tile the target
+    grid's footprint exactly (lat descending, like FourCastNet/CHIRPS)."""
+    lo_lat = float(cfg.lat_vals.min()) - 0.5 + 0.125   # first cell centre
+    hi_lat = float(cfg.lat_vals.max()) + 0.5 - 0.125
+    lo_lon = float(cfg.lon_vals.min()) - 0.5 + 0.125
+    hi_lon = float(cfg.lon_vals.max()) + 0.5 - 0.125
+    lat = np.arange(hi_lat, lo_lat - 1e-6, -0.25)       # descending
+    lon = np.arange(lo_lon, hi_lon + 1e-6, 0.25)
+    rng = np.random.default_rng(0)
+    data = rng.gamma(shape=1.5, scale=3.0, size=(lat.size, lon.size)).astype(np.float32)
+    return xr.DataArray(data, dims=["lat", "lon"], coords={"lat": lat, "lon": lon})
+
+
+def test_conservative_regrid_conserves_area_weighted_mean(tmp_path):
+    """Coarsening 0.25°→1° must preserve the cos(lat)-weighted domain mean
+    (mass), unlike bilinear point-sampling. Source footprint == target footprint,
+    so the two area-weighted means must agree."""
+    cfg = BenchmarkConfig()
+    da = _fine_precip_da(cfg)
+
+    out = regrid.conservative_regrid(
+        da, cfg.lat_vals, cfg.lon_vals, tmp_path, tag="test"
+    )
+
+    assert list(out.lat.values) == pytest.approx(list(cfg.lat_vals))
+    assert list(out.lon.values) == pytest.approx(list(cfg.lon_vals))
+
+    src_mean = float(da.weighted(np.cos(np.deg2rad(da.lat))).mean().values)
+    out_mean = float(out.weighted(np.cos(np.deg2rad(out.lat))).mean().values)
+    assert out_mean == pytest.approx(src_mean, rel=0.01)
+
+
+def test_conservative_regrid_normalises_latlon_names_and_orientation(tmp_path):
+    """latitude/longitude names and a descending axis are handled transparently."""
+    cfg = BenchmarkConfig()
+    da = _fine_precip_da(cfg).rename({"lat": "latitude", "lon": "longitude"})
+
+    out = regrid.conservative_regrid(
+        da, cfg.lat_vals, cfg.lon_vals, tmp_path, tag="test"
+    )
+    assert out.sizes == {"lat": len(cfg.lat_vals), "lon": len(cfg.lon_vals)}
+    assert float(out.lat[0]) < float(out.lat[-1])          # ascending
+    assert bool(np.isfinite(out).all())                    # every cell covered

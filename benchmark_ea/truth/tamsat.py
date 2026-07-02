@@ -21,6 +21,8 @@ import requests
 import xarray as xr
 from tqdm import tqdm
 
+from benchmark_ea import regrid
+
 
 _BASE_URL = (
     "https://gws-access.jasmin.ac.uk/public/tamsat/rfe/data/v3.1/daily/"
@@ -146,60 +148,8 @@ def _conservative_regrid(
     lon: np.ndarray,
     cache_dir: Path,
 ) -> xr.DataArray:
-    try:
-        import xesmf as xe
-    except ImportError as exc:
-        raise ImportError(
-            "TAMSAT conservative regridding requires xesmf. "
-            "Install benchmark-ea with its runtime dependencies, or install xesmf."
-        ) from exc
-
-    target_lat = lat.astype(np.float64)
-    target_lon = lon.astype(np.float64)
-    source_grid = _rectilinear_grid(
-        da.lat.values.astype(np.float64),
-        da.lon.values.astype(np.float64),
-    )
-    target_grid = _rectilinear_grid(target_lat, target_lon)
-
-    weights_path = cache_dir / f"tamsat_conservative_{_grid_hash(source_grid, target_grid)}.nc"
-    regridder = xe.Regridder(
-        source_grid,
-        target_grid,
-        "conservative",
-        filename=str(weights_path),
-        reuse_weights=weights_path.exists(),
-        unmapped_to_nan=True,
-    )
-    return regridder(da, skipna=True)
-
-
-def _rectilinear_grid(lat: np.ndarray, lon: np.ndarray) -> xr.Dataset:
-    return xr.Dataset(
-        coords={
-            "lat":   ("lat",   lat),
-            "lon":   ("lon",   lon),
-            "lat_b": ("lat_b", _bounds_1d(lat)),
-            "lon_b": ("lon_b", _bounds_1d(lon)),
-        }
-    )
-
-
-def _bounds_1d(coord: np.ndarray) -> np.ndarray:
-    coord = coord.astype(np.float64)
-    bounds = np.empty(coord.size + 1, dtype=np.float64)
-    bounds[1:-1] = 0.5 * (coord[:-1] + coord[1:])
-    bounds[0]    = coord[0]  - 0.5 * (coord[1]  - coord[0])
-    bounds[-1]   = coord[-1] + 0.5 * (coord[-1] - coord[-2])
-    return bounds
-
-
-def _grid_hash(source_grid: xr.Dataset, target_grid: xr.Dataset) -> str:
-    h = hashlib.blake2b(digest_size=10)
-    for grid in (source_grid, target_grid):
-        for name in ("lat", "lon", "lat_b", "lon_b"):
-            h.update(np.ascontiguousarray(grid[name].values).view(np.uint8))
-    return h.hexdigest()
+    """Area-weighted regrid to the model grid via the shared benchmark operator."""
+    return regrid.conservative_regrid(da, lat, lon, cache_dir, tag="tamsat")
 
 
 def _combined_cache_name(start: str, end: str, lat: np.ndarray, lon: np.ndarray) -> str:

@@ -79,3 +79,8 @@ class BenchmarkConfig:
     @property
     def chirps_cache_dir(self) -> Path:
         return Path(self.data_dir) / "chirps"
+
+    @property
+    def regrid_weights_dir(self) -> Path:
+        """Cache dir for the shared conservative-regrid (xESMF) weight files."""
+        return Path(self.data_dir) / "regrid_weights"

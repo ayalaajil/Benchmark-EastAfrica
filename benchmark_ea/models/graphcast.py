@@ -37,6 +37,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
+from benchmark_ea import regrid
 from benchmark_ea.config import BenchmarkConfig
 from benchmark_ea.models.base import ModelAdapter
 
@@ -424,29 +425,26 @@ def _to_canonical(
 
         daily_mm = np.clip(np.sum(steps_mm, axis=0), 0, None)  # (lat, lon) mm/day
 
-        # Subset to EA domain and regrid to exact config grid
+        # Native-grid daily total; conservative regrid to the EA grid happens once
+        # for all leads below (same mass-conserving operator as the observations).
         step_da = xr.DataArray(
             daily_mm,
             coords={"lat": prec.lat, "lon": prec.lon},
             dims=["lat", "lon"],
         )
-        step_da = (
-            step_da
-            .sel(
-                lat=slice(config.lat_min - 0.5, config.lat_max + 0.5),
-                lon=slice(config.lon_min - 0.5, config.lon_max + 0.5),
-            )
-            .interp(
-                lat=config.lat_vals.astype(np.float64),
-                lon=config.lon_vals.astype(np.float64),
-                method="linear",
-            )
-        )
-        lead_arrays.append(step_da.values)   # (lat, lon)
+        lead_arrays.append(step_da)   # native (lat, lon)
+
+    native = xr.concat(lead_arrays, dim="lead_day").assign_coords(
+        lead_day=list(config.lead_days)
+    )
+    ea = regrid.conservative_regrid(
+        native, config.lat_vals, config.lon_vals, config.regrid_weights_dir,
+        tag="graphcast_small", subset_buffer=4.0,
+    ).transpose("lead_day", "lat", "lon")
 
     # GraphCast is deterministic → sample=1
     # Shape: (1, n_leads, lat, lon) → add sample + init_time dims
-    stacked = np.stack(lead_arrays, axis=0)[np.newaxis, np.newaxis]  # (1, 1, n_lead, lat, lon)
+    stacked = ea.values[np.newaxis, np.newaxis]  # (1, 1, n_lead, lat, lon)
 
     return xr.Dataset(
         {

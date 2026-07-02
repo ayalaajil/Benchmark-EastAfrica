@@ -46,7 +46,11 @@ across days), so every verified sample is an independent cold-start forecast.
 **Rainfall accumulation.** The canonical target is the total precipitation over
 the 00–00 UTC calendar day *t* + *ℓ* (mm day⁻¹). Because each model emits
 precipitation on its own native cadence, daily totals are formed per model and
-then regridded/subset to the common 1° grid:
+then regridded/subset to the common 1° grid. Model rainfall is remapped with the
+**same area-weighted (conservative, xESMF) operator used for the observations**,
+so daily totals are mass-conserving whether the native grid is finer (FourCastNet
+0.25°) or coarser (NeuralGCM ~2.8°) than the target — bilinear interpolation is
+reserved for the non-precipitation instantaneous state fields:
 
 - **GenCast** emits 12-hourly accumulated precipitation; the daily total is the
   sum of the two 12 h increments covering the valid day (2 × 12 h = 24 h).
@@ -64,8 +68,8 @@ All accumulated totals are clipped at zero and converted to mm day⁻¹.
 
 We benchmark **four state-of-the-art machine-learning forecast systems** against
 a climatological baseline. All learned models are initialized from ERA5, and
-their precipitation output is regridded and subset to the common 1° East Africa
-domain. To keep verification identical across deterministic and ensemble
+their precipitation output is conservatively (area-weighted) regridded and subset
+to the common 1° East Africa domain. To keep verification identical across deterministic and ensemble
 systems, every model's output is stored in one canonical layout indexed by
 initialization time, ensemble member, lead day, latitude, and longitude, with
 precipitation in mm day⁻¹. Deterministic models are stored as single-member

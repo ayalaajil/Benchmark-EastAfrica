@@ -34,6 +34,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
+from benchmark_ea import regrid
 from benchmark_ea.config import BenchmarkConfig
 from benchmark_ea.models.base import ModelAdapter
 
@@ -435,22 +436,19 @@ def _to_canonical(
             prec.sel(time=t_pm, method="nearest")
         ) * 1000.0   # m → mm/day
         daily_mm = daily_mm.clip(min=0)
+        lead_arrays.append(daily_mm)   # native (sample, lat, lon)
 
-        daily_mm = (
-            daily_mm
-            .sel(
-                lat=slice(config.lat_min - 0.5, config.lat_max + 0.5),
-                lon=slice(config.lon_min - 0.5, config.lon_max + 0.5),
-            )
-            .interp(
-                lat=config.lat_vals.astype(np.float64),
-                lon=config.lon_vals.astype(np.float64),
-                method="linear",
-            )
-        )
-        lead_arrays.append(daily_mm.values)   # (n_members, lat, lon)
+    # Native 1° daily totals → EA 1° grid via the shared mass-conserving operator
+    # (same as the observations). Regrids all members and leads in one call.
+    native = xr.concat(lead_arrays, dim="lead_day").assign_coords(
+        lead_day=list(config.lead_days)
+    )
+    ea = regrid.conservative_regrid(
+        native, config.lat_vals, config.lon_vals, config.regrid_weights_dir,
+        tag="gencast", subset_buffer=4.0,
+    ).transpose("sample", "lead_day", "lat", "lon")
 
-    stacked = np.stack(lead_arrays, axis=1)   # (n_members, n_lead, lat, lon)
+    stacked = ea.values   # (n_members, n_lead, lat, lon)
 
     return xr.Dataset({
         "total_precipitation": xr.DataArray(
