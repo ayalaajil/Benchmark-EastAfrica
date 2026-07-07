@@ -135,7 +135,9 @@ class NeuralGCMAdapter(ModelAdapter):
                 precip_raw_vars=(_PRECIP_VAR,),
                 sample_dim="sample",
             )
-            ds.to_zarr(str(zarr_path), mode="w")
+            # zarr v2: the NeuralGCM env has zarr-python 3.x, whose default v3
+            # format the verification env (zarr 2.x) cannot read
+            ds.to_zarr(str(zarr_path), mode="w", zarr_format=2)
             print(f"  {date.date()} — saved → {zarr_path.name} ({list(ds.data_vars)})")
 
         return out_dir

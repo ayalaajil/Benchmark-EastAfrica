@@ -50,6 +50,13 @@ def load_predictions(pred_dir, models):
                 f"{m}: prediction files have inconsistent lat/lon grids {grids} in "
                 f"{pred_dir}/{m}/ — clear stale files and regenerate."
             )
+        members = {p.sizes.get("sample", 1) for p in parts}
+        if len(members) > 1:
+            raise ValueError(
+                f"{m}: prediction files have inconsistent ensemble sizes {members} in "
+                f"{pred_dir}/{m}/ — concat would pad missing members with NaN and "
+                f"silently poison every ensemble score. Clear stale files and regenerate."
+            )
         preds[m] = xr.concat(parts, dim="init_time")
         print(f"  {m:15s}  {dict(zip(preds[m].dims, preds[m].shape))}")
     return preds

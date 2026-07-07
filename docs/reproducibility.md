@@ -6,17 +6,21 @@ ERA5 from anonymous GCS; CHIRPS/ERA5/TAMSAT downloaded and cached on first use).
 
 ## Environment
 
-Inference needs a GPU and the `aim-graphcast` conda environment, which supports
-all models (JAX + graphcast for GenCast/GraphCast; PyTorch + earth2mip for
-FourCastNet/PrecipitationAFNO). The shell wrappers set `LD_LIBRARY_PATH` and
-`PYTHONNOUSERSITE` for you.
+Inference needs a GPU and two conda environments: `aim-graphcast` for
+GenCast/GraphCast (JAX + graphcast) and FourCastNet/PrecipitationAFNO
+(PyTorch + earth2mip), and `neuralgcm` for NeuralGCM (its JAX stack needs a
+newer Python). The shell wrappers set `LD_LIBRARY_PATH` and
+`PYTHONNOUSERSITE` for you. Environment files are under `envs/`.
 
 ## 1. Inference
 
 ```bash
-# All models, MAM 2024, precipitation only (default)
+# GenCast / GraphCast / FourCastNet / climatology, MAM 2024, precip only (default)
 ./run_inference.sh --models gencast graphcast fourcastnet climatology \
     --start 2024-03-01 --end 2024-05-31 --lead-days 1 3 5 7
+
+# NeuralGCM (own env; ensemble size and variables via env vars)
+./run_neuralgcm.sh
 
 # Save every variable, regridded to the EA grid (ensemble mean for non-precip)
 ./run_inference.sh --models gencast graphcast fourcastnet \
@@ -39,23 +43,17 @@ runs are resumable; pass `--overwrite` to force regeneration.
 ```bash
 python run_verification.py --pred-dir data/predictions \
     --start 2024-03-01 --end 2024-05-31 \
-    --models gencast graphcast fourcastnet
+    --models fourcastnet gencast graphcast neuralgcm
 ```
 
-This writes all CSV tables and figures to `mam2024_analysis_outputs/`. It reads
-only `total_precipitation`, so it works on both precip-only and all-variable
+This single command writes **every** figure (vector PDF + 300-dpi PNG) and CSV
+table to `mam2024_analysis_outputs/`: timeseries, temporal error curves,
+ensemble CRPS/spread/SSR, tie-aware rank histograms, reliability diagrams,
+spatial error maps, CRPSS-vs-climatology maps, anomaly-correlation and
+spread–skill lead curves, and zonal spread–skill profiles. It reads only
+`total_precipitation`, so it works on both precip-only and all-variable
 stores. If `data/predictions/climatology/` exists, the climatology baseline is
 loaded automatically and the **CRPS skill score** (table + maps) is produced.
-
-The companion analysis scripts produce the remaining figures, all referenced to
-the same out-of-sample CHIRPS climatology:
-
-```bash
-python crpss_skill_maps_all_leads.py     # CRPSS maps, all leads
-python acc_lead_curves.py                # anomaly correlation vs lead
-python ssr_lead_curves.py                # spread–skill vs lead
-python ssr_zonal_profile.py              # zonal spread–skill
-```
 
 ## 3. Tests
 

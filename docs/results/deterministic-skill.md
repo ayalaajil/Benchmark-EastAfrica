@@ -8,8 +8,8 @@ biases differ, and where in space do the errors concentrate?
 ![Area-mean daily precipitation by lead day](../assets/figures/timeseries.png){ loading=lazy }
 
 Area-weighted, land-only **mean daily rainfall** over the domain across the
-season, one panel per lead day, with the three forecasts (FourCastNet, GenCast,
-GraphCast) overlaid on all three references (CHIRPS, ERA5, TAMSAT).
+season, one panel per lead day, with the four forecasts (FourCastNet, GenCast,
+GraphCast, NeuralGCM) overlaid on all three references (CHIRPS, ERA5, TAMSAT).
 
 - The seasonal pulses — the early-April and late-April/early-May wet spells of
   MAM 2024 — are captured by all models at **lead day 1**, with GenCast and ERA5
@@ -24,7 +24,7 @@ GraphCast) overlaid on all three references (CHIRPS, ERA5, TAMSAT).
 
 ## Temporal error structure
 
-![Rolling bias and MAE over the season](../assets/figures/temporal_skill_bias_mae.png){ loading=lazy }
+![Rolling bias and MAE over the season](../assets/figures/temporal_bias_mae.png){ loading=lazy }
 
 Seven-day rolling **bias** (top) and **mean absolute error** (bottom) versus
 valid date, one column per lead day, against CHIRPS.
@@ -43,11 +43,23 @@ valid date, one column per lead day, against CHIRPS.
 === "Lead day 1"
     ![Spatial bias and RMSE vs CHIRPS, lead day 1](../assets/figures/spatial_maps_chirps_ld1.png){ loading=lazy }
 
+=== "Lead day 3"
+    ![Spatial bias and RMSE vs CHIRPS, lead day 3](../assets/figures/spatial_maps_chirps_ld3.png){ loading=lazy }
+
+=== "Lead day 5"
+    ![Spatial bias and RMSE vs CHIRPS, lead day 5](../assets/figures/spatial_maps_chirps_ld5.png){ loading=lazy }
+
 === "Lead day 7"
     ![Spatial bias and RMSE vs CHIRPS, lead day 7](../assets/figures/spatial_maps_chirps_ld7.png){ loading=lazy }
 
 Per-cell **bias** (top, red = wet / blue = dry) and **RMSE** (bottom) against
-CHIRPS, by model.
+CHIRPS, by model. Ocean cells are masked with a Natural Earth land mask
+(independent of the obs product's own coverage, so this is consistent whether
+the reference is CHIRPS or ERA5).
+
+!!! note "Analysis below predates NeuralGCM"
+    The bullets describe the original three-model comparison; NeuralGCM is
+    now in the figure but not yet discussed here.
 
 - Errors are **organized by terrain and coastline**, not latitude alone: the
   largest RMSE sits over the **Ethiopian highlands (~5–10°N)**, the
@@ -77,10 +89,14 @@ column per lead day, with the three zonal bands shaded — Southern EA, the
 
 ## Anomaly correlation
 
-![Anomaly correlation vs lead day](../assets/figures/acc_lead_curves_chirps.png){ loading=lazy }
+![Anomaly correlation vs lead day](../assets/figures/acc_lead_curves.png){ loading=lazy }
 
-**Anomaly correlation coefficient (ACC)** against CHIRPS versus lead day, with
-the conventional **ACC = 0.6 "useful-skill" guide** marked.
+**Anomaly correlation coefficient (ACC)** versus lead day against CHIRPS and
+TAMSAT, with the conventional **ACC = 0.6 "useful-skill" guide** marked.
+
+!!! note "Analysis below predates NeuralGCM"
+    The bullets describe the original three-model comparison; NeuralGCM is now
+    in the figure but not yet discussed here.
 
 - **No model reaches 0.6 at any lead** — daily rainfall anomalies over this
   convection-dominated region are intrinsically hard to predict.

@@ -11,11 +11,12 @@ flowchart LR
     subgraph INF[Inference — benchmark_ea.run]
         B{Model adapter}
         B --> G[GenCast]
+        B --> N[NeuralGCM]
         B --> H[GraphCast]
         B --> F[FourCastNet v2<br/>+ PrecipAFNO]
         B --> C[Climatology<br/>CHIRPS DOY]
     end
-    G & H & F & C --> Z[(pred_YYYY-MM-DD.zarr<br/>EA 1° grid)]
+    G & N & H & F & C --> Z[(pred_YYYY-MM-DD.zarr<br/>EA 1° grid)]
     Z --> V
     OBS[CHIRPS · ERA5 · TAMSAT] --> V
     subgraph VER[Verification — run_verification.py]
@@ -81,6 +82,9 @@ accepts the same options via environment variables
 - **GenCast** (GenCast-Mini) — diffusion-based generative ensemble; a 10-member
   ensemble is drawn per initialization and native 12-hourly increments are
   summed to daily totals.
+- **NeuralGCM** — hybrid dynamical-core + learned-physics model run as a
+  10-member stochastic ensemble (runs in its own conda environment via
+  `run_neuralgcm.sh`).
 - **GraphCast** (GraphCast-small) — deterministic graph neural network run
   autoregressively at 1° with 13 pressure levels.
 - **FourCastNet v2** — deterministic spherical-Fourier neural operator; it does
@@ -94,9 +98,13 @@ accepts the same options via environment variables
 `run_verification.py` loads the prediction stores and the three observational
 references, aligns each forecast with the observation valid at *init + lead*,
 and computes the full metric catalogue (see **[Experimental
-Setup](experimental-setup.md)**). It writes CSV tables plus all figures shown in
-the Results section. It reads only `total_precipitation`, so it works
-identically on precip-only and all-variable prediction stores.
+Setup](experimental-setup.md)**). One command writes every CSV table and every
+figure shown in the Results section, each as vector PDF + 300-dpi PNG in a
+shared publication style (colorblind-validated palette, defined once in
+`benchmark_ea/verification/style.py`). Ensemble-only diagnostics — CRPS/spread,
+rank histograms, reliability — automatically cover every model with more than
+one member (GenCast, NeuralGCM). It reads only `total_precipitation`, so it
+works identically on precip-only and all-variable prediction stores.
 
 The climatology baseline, when present, is loaded automatically and used as the
 reference for the **CRPS skill score** (CRPSS).

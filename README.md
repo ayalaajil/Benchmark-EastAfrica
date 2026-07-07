@@ -1,9 +1,10 @@
 # East Africa AI Weather-Model Benchmark
 
 Benchmarks machine-learning weather forecast systems — **GenCast** (diffusion
-ensemble), **GraphCast** (deterministic GNN), **FourCastNet v2 +
-PrecipitationAFNO** (deterministic SFNO) — against a **climatology baseline**
-over East Africa, verified against **CHIRPS**, **ERA5**, and **TAMSAT**.
+ensemble), **NeuralGCM** (hybrid dynamical-ML ensemble), **GraphCast**
+(deterministic GNN), **FourCastNet v2 + PrecipitationAFNO** (deterministic
+SFNO) — against a **climatology baseline** over East Africa, verified against
+**CHIRPS**, **ERA5**, and **TAMSAT**.
 
 See [EXPERIMENTAL_SETUP.md](EXPERIMENTAL_SETUP.md) for domain, models, references,
 and metrics.
@@ -15,11 +16,13 @@ benchmark_ea/            inference package
   run.py                 single inference entry point (CLI)
   config.py              BenchmarkConfig (grid, dates, saving options)
   regrid.py              shared regrid/subset to the EA 1° grid
-  models/                one adapter per model (gencast, graphcast, fourcastnet, climatology)
+  models/                one adapter per model (gencast, graphcast, fourcastnet, neuralgcm, climatology)
   truth/                 observation loaders (chirps, era5, tamsat)
-run_verification.py      verification / analysis → mam2024_analysis_outputs/
+  verification/          scoring, publication figures (style.py) and CSV tables
+run_verification.py      verification entry point → mam2024_analysis_outputs/
 run_inference.sh         env wrapper (single GPU); forwards all args to benchmark_ea.run
 run_inference_parallel.sh  multi-GPU launcher (one model per GPU)
+run_neuralgcm.sh         NeuralGCM launcher (own conda env)
 ```
 
 ## Environment
@@ -88,9 +91,15 @@ Each init date is written to `<output-dir>/<model>/pred_YYYY-MM-DD.zarr`
 
 ```bash
 python run_verification.py --pred-dir data/predictions \
-    --start 2024-03-01 --end 2024-05-31 --models gencast graphcast fourcastnet
+    --start 2024-03-01 --end 2024-05-31 \
+    --models fourcastnet gencast graphcast neuralgcm
 ```
 
+One command produces every publication figure (vector PDF + 300-dpi PNG; a
+colorblind-validated palette, defined once in
+`benchmark_ea/verification/style.py`) and every CSV table. Ensemble-only
+diagnostics (CRPS/spread, rank histograms, reliability) automatically cover
+every model with more than one member — currently GenCast and NeuralGCM.
 Verification reads only `total_precipitation`, so it works on both precip-only
 and all-variable prediction stores.
 
@@ -99,7 +108,7 @@ climatology 21-member baseline is loaded automatically and used as the reference
 for the CRPS skill score:
 
 * `crpss_vs_climatology_by_model_obs_lead.csv` — CRPSS per model × reference × lead
-* `crpss_maps_vs_climatology_chirps.png` — per-cell CRPSS maps (one row per lead)
+* `crpss_maps_chirps.pdf/.png` — per-cell CRPSS maps, models × lead days
 
 `CRPSS = 1 - CRPS_model / CRPS_climatology` (> 0 = beats climatology). Generate
 the baseline first:

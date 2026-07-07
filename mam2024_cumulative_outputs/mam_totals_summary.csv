@@ -1,0 +1,22 @@
+region,source,MAM total (mm),P90 members (mm),bias vs CHIRPS (mm),bias vs CHIRPS (%)
+Kenya,CHIRPS (obs),363.2,,0.0,0.0
+Kenya,ERA5 (obs),325.4,,-37.8,-10.4
+Kenya,TAMSAT (obs),334.5,,-28.6,-7.9
+Kenya,GenCast,279.6,307.7,-83.6,-23.0
+Kenya,GraphCast,290.4,,-72.8,-20.0
+Kenya,FourCastNet,169.4,,-193.7,-53.3
+Kenya,Climatology,237.7,,-125.5,-34.6
+Tanzania,CHIRPS (obs),426.2,,0.0,0.0
+Tanzania,ERA5 (obs),440.5,,14.3,3.4
+Tanzania,TAMSAT (obs),341.3,,-84.8,-19.9
+Tanzania,GenCast,408.9,437.7,-17.3,-4.1
+Tanzania,GraphCast,369.2,,-57.0,-13.4
+Tanzania,FourCastNet,237.1,,-189.0,-44.4
+Tanzania,Climatology,343.9,,-82.2,-19.3
+Domain,CHIRPS (obs),268.3,,0.0,0.0
+Domain,ERA5 (obs),262.1,,-6.2,-2.3
+Domain,TAMSAT (obs),256.2,,-12.1,-4.5
+Domain,GenCast,243.9,254.7,-24.4,-9.1
+Domain,GraphCast,238.8,,-29.6,-11.0
+Domain,FourCastNet,151.6,,-116.7,-43.5
+Domain,Climatology,234.6,,-33.7,-12.6

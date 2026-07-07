@@ -19,12 +19,16 @@ worse; **0** is the break-even line.
     this definition once the full-year baseline is available (the qualitative
     pattern is unchanged).
 
-![CRPS skill score maps vs climatology, all leads](../assets/figures/crpss_maps_all_leads_chirps.png){ loading=lazy }
+![CRPS skill score maps vs climatology, all leads](../assets/figures/crpss_maps_chirps.png){ loading=lazy }
 
-Per-cell CRPSS against the CHIRPS climatology — rows are models, columns are lead
-days, **blue = skill, red = worse than climatology**, the black contour marks
-CRPSS = 0, and hyper-arid cells (climatological mean < 0.5 mm day⁻¹) are masked
-grey.
+Per-cell CRPSS against the CHIRPS climatology — rows are models (now including
+NeuralGCM), columns are lead days, **blue = skill, red = worse than
+climatology**, the black contour marks CRPSS = 0, and hyper-arid cells
+(climatological mean < 0.5 mm day⁻¹) are masked grey.
+
+!!! note "Analysis below predates NeuralGCM"
+    The bullets describe the original three-model comparison and need a pass
+    to discuss NeuralGCM's panel.
 
 - **GenCast is the only model that beats climatology over a substantial area** —
   the blue equatorial belt (roughly 5°S–5°N) — and it **retains that skill out to

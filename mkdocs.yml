@@ -29,14 +29,17 @@ theme:
 
 nav:
   - Home: index.md
-  - Pipeline: pipeline.md
-  - Experimental Setup: experimental-setup.md
+  - Dashboard: https://ayalaajil.github.io/Benchmark-EastAfrica/dashboard/
+  - Key Findings: key-findings.md
+  - Methodology: methodology.md
   - Results:
     - Overview: results/index.md
     - Deterministic Skill: results/deterministic-skill.md
     - Probabilistic Calibration: results/probabilistic-calibration.md
     - Skill vs Climatology: results/skill-vs-climatology.md
     - Event-Based Skill: results/event-based.md
+  - Glossary: glossary.md
+  - Data & Downloads: data.md
   - Reproducibility: reproducibility.md
 
 markdown_extensions:

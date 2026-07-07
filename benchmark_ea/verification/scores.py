@@ -147,6 +147,71 @@ def spatial_metric_maps(preds, model, obs_2d, init_dates, lead_day=1):
     })
 
 
+def seasonal_mean_field(obs_2d):
+    """Per-cell seasonal mean of a truth source — the ACC anomaly reference."""
+    return np.nanmean(np.stack(list(obs_2d.values())), axis=0)
+
+
+def acc_pooled(preds, model, obs_2d, clim_field, init_dates, lead_day):
+    """
+    Pooled anomaly correlation coefficient over land cells and cases.
+
+        ACC = Σ f'o' / sqrt(Σ f'² · Σ o'²),  f' = fc − clim,  o' = obs − clim
+
+    The forecast is the ensemble mean; anomalies are w.r.t. the per-cell
+    seasonal mean of the truth source (``clim_field``).
+    """
+    fc_all, ob_all = gather_pairs_maps(preds, model, obs_2d, init_dates, lead_day)
+    if fc_all is None:
+        return np.nan
+    fa = fc_all.mean(axis=1) - clim_field[None]
+    oa = ob_all - clim_field[None]
+    ok = np.isfinite(fa) & np.isfinite(oa)
+    fa, oa = fa[ok], oa[ok]
+    denom = np.sqrt(np.sum(fa ** 2) * np.sum(oa ** 2))
+    return float(np.sum(fa * oa) / denom) if denom > 0 else np.nan
+
+
+def spread_skill_pooled(preds, model, obs_2d, init_dates, lead_day):
+    """
+    Pooled (cells × cases) ensemble spread, RMSE and their ratio at one lead.
+
+        spread = sqrt( (M+1)/M · <ensemble variance> )     Fortin et al. (2014)
+        SSR    = spread / RMSE(ensemble mean)              1 = well calibrated
+
+    Returns (spread, rmse, ssr).
+    """
+    fc_all, ob_all = gather_pairs_maps(preds, model, obs_2d, init_dates, lead_day)
+    if fc_all is None:
+        return np.nan, np.nan, np.nan
+    m = fc_all.shape[1]
+    corr = (m + 1) / m
+    err = fc_all.mean(axis=1) - ob_all
+    var = fc_all.var(axis=1, ddof=1)
+    land = np.isfinite(ob_all)
+    rmse = float(np.sqrt(np.mean(err[land] ** 2)))
+    spread = float(np.sqrt(corr * np.mean(var[land])))
+    return spread, rmse, spread / rmse if rmse > 0 else np.nan
+
+
+def ssr_by_lat(preds, model, obs_2d, init_dates, lead_day):
+    """Per-latitude SSR (variance and squared error pooled over lon and cases)."""
+    fc_all, ob_all = gather_pairs_maps(preds, model, obs_2d, init_dates, lead_day)
+    if fc_all is None:
+        return None
+    m = fc_all.shape[1]
+    corr = (m + 1) / m
+    err = fc_all.mean(axis=1) - ob_all
+    var = fc_all.var(axis=1, ddof=1)
+    land = np.isfinite(ob_all)
+    err2 = np.where(land, err ** 2, np.nan)
+    var = np.where(land, var, np.nan)
+    mean_err2 = np.nanmean(np.nanmean(err2, axis=0), axis=1)   # cases → lon → (lat,)
+    mean_var = np.nanmean(np.nanmean(var, axis=0), axis=1)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        return np.sqrt(corr * mean_var) / np.sqrt(mean_err2)
+
+
 def _crps_map(fc_all, ob_all):
     """Mean fair CRPS per grid cell. fc_all (case, sample, lat, lon)."""
     term1 = np.abs(fc_all - ob_all[:, None]).mean(axis=1)                 # (case, lat, lon)

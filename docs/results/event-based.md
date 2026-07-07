@@ -2,11 +2,16 @@
 
 Operational interest centers on **whether it rains** at a given intensity, not
 just the amount. We evaluate forecasts as binary events at exceedance thresholds
-of **1, 5, 10 and 20 mm day⁻¹** using contingency-table scores and, for GenCast,
-the Brier score.
+of **1, 5, 10 and 20 mm day⁻¹** using contingency-table scores and, for the
+ensemble models, the Brier score.
 
 The figures on this page are tabulated rather than plotted; full tables live in
-`event_scores_by_threshold.csv` and `gencast_brier_scores.csv`.
+`event_scores_by_threshold.csv` and `brier_scores.csv` (both now cover
+NeuralGCM alongside the original three models).
+
+!!! note "Tables below predate NeuralGCM"
+    The contingency table and Brier scores here are the original three-model
+    numbers; they need a refresh from the current CSVs to add NeuralGCM.
 
 ## Contingency scores at the "rain / no-rain" threshold
 
@@ -53,4 +58,4 @@ lead 1 to lead 7), mirroring GenCast's stable CRPS. Reliability-diagram and ECE
 diagnostics for these same probabilities are on the
 [Probabilistic Calibration](probabilistic-calibration.md) page; the Brier-score
 reliability/resolution/uncertainty decomposition is tabulated in
-`gencast_brier_scores.csv` / `gencast_reliability_tables.csv`.
+`brier_scores.csv` / `reliability_tables.csv`.

@@ -35,6 +35,13 @@ def load_climatology_reference(pred_dir):
             f"climatology: inconsistent lat/lon grids {grids} in "
             f"{pred_dir}/climatology/ — clear stale files and regenerate."
         )
+    members = {p.sizes.get("sample", 1) for p in parts}
+    if len(members) > 1:
+        raise ValueError(
+            f"climatology: inconsistent ensemble sizes {members} in "
+            f"{pred_dir}/climatology/ — concat would pad missing members with "
+            f"NaN and silently poison CRPS. Clear stale files and regenerate."
+        )
     return xr.concat(parts, dim="init_time")
 
 

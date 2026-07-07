@@ -1,6 +1,10 @@
 """
 East Africa precipitation forecast verification.
 
+Single entry point for the full verification pipeline: loads predictions and
+the three observational references, then writes every publication figure
+(PDF + 300-dpi PNG) and CSV table into --output-dir.
+
 Usage
 -----
 # MAM 2024 (default)
@@ -33,17 +37,22 @@ from benchmark_ea.verification.data import (
 )
 from benchmark_ea.verification.scores import (
     compute_pctile_maps,
-    crpss_maps_vs_climatology,   # noqa: F401 — re-exported for the standalone CRPSS scripts
+    compute_temporal_metrics,
     gather_pairs,
 )
 from benchmark_ea.verification.plots import (
+    plot_acc_curves,
     plot_crpss_maps,
+    plot_ensemble_temporal,
     plot_rank_histograms,
     plot_reliability_local,
     plot_spatial_maps,
-    plot_temporal_skill,
+    plot_ssr_lead_curves,
+    plot_ssr_zonal,
+    plot_temporal_bias_mae,
     plot_timeseries,
 )
+from benchmark_ea.verification.style import apply_style
 from benchmark_ea.verification.tables import compute_and_save_tables
 
 
@@ -56,7 +65,7 @@ def parse_args():
     p.add_argument("--obs-end",    default="2024-06-07",
                    help="Last date needed for observations (init END + max lead day)")
     p.add_argument("--models",     nargs="+",
-                   default=["fourcastnet", "gencast", "graphcast"],
+                   default=["fourcastnet", "gencast", "graphcast", "neuralgcm"],
                    help="Models to verify. 'climatology' is supported as a "
                         "baseline once its predictions have been generated.")
     p.add_argument("--lead-days",  nargs="+", type=int,
@@ -77,6 +86,7 @@ def parse_args():
 def main():
     args = parse_args()
     os.makedirs(args.output_dir, exist_ok=True)
+    apply_style()
 
     config     = BenchmarkConfig()
     INIT_DATES = pd.date_range(args.start, args.end, freq="D")
@@ -98,6 +108,10 @@ def main():
 
     LEAD_DAYS_ANALYSIS = [int(x) for x in preds[args.models[0]].lead_day.values]
 
+    # Ensemble models (>1 member) take part in the probabilistic diagnostics
+    ENS_MODELS = [m for m in args.models if preds[m].sizes.get("sample", 1) > 1]
+    print(f"\nEnsemble models: {ENS_MODELS or 'none'}")
+
     # ── Calibration pairs (lead day 1) ──
     print("\nGathering calibration pairs …")
     pairs_chirps = {m: gather_pairs(preds, m, chirps_2d, INIT_DATES, 1) for m in args.models}
@@ -110,33 +124,53 @@ def main():
     era5_pctile   = compute_pctile_maps(era5_2d)
     tamsat_pctile = compute_pctile_maps(tamsat_2d)
 
+    # ── Temporal metrics vs CHIRPS (shared by the temporal figures) ──
+    print("Computing temporal metrics …")
+    temporal = {m: {ld: compute_temporal_metrics(preds, m, chirps_2d, INIT_DATES, ld)
+                    for ld in LEAD_DAYS}
+                for m in args.models}
+
     # ── Figures ──
     plot_timeseries(preds, args.models, INIT_DATES, LEAD_DAYS,
                     chirps_lookup, era5_lookup, tamsat_lookup, args.output_dir)
 
-    plot_temporal_skill(preds, args.models, INIT_DATES, LEAD_DAYS,
-                        chirps_2d, args.output_dir)
+    plot_temporal_bias_mae(temporal, args.models, LEAD_DAYS, args.output_dir)
 
-    plot_rank_histograms(preds, args.models, INIT_DATES, LEAD_DAYS,
-                         chirps_2d, era5_2d, tamsat_2d, args.output_dir)
+    if ENS_MODELS:
+        plot_ensemble_temporal(temporal, ENS_MODELS, LEAD_DAYS, args.output_dir)
 
-    plot_reliability_local(preds, INIT_DATES,
-                           chirps_2d, era5_2d, tamsat_2d,
-                           chirps_pctile, era5_pctile, tamsat_pctile,
-                           args.output_dir)
+        plot_rank_histograms(preds, ENS_MODELS, INIT_DATES, LEAD_DAYS,
+                             {"CHIRPS": chirps_2d, "ERA5": era5_2d,
+                              "TAMSAT": tamsat_2d}, args.output_dir)
+
+        plot_reliability_local(preds, ENS_MODELS, INIT_DATES,
+                               [("CHIRPS", chirps_2d, chirps_pctile),
+                                ("ERA5",   era5_2d,   era5_pctile),
+                                ("TAMSAT", tamsat_2d, tamsat_pctile)],
+                               args.output_dir)
 
     plot_spatial_maps(preds, args.models, INIT_DATES,
                       chirps_2d, era5_2d, LEAD_DAYS, args.output_dir)
 
     # CRPS skill score vs climatology — maps (only if climatology was loaded)
     if "climatology" in preds:
-        print("Plotting CRPSS-vs-climatology maps …")
         plot_crpss_maps(preds, args.models, chirps_2d, INIT_DATES,
                         LEAD_DAYS, args.output_dir, obs_label="chirps")
 
+    plot_acc_curves(preds, args.models,
+                    {"CHIRPS": chirps_2d, "TAMSAT": tamsat_2d},
+                    INIT_DATES, LEAD_DAYS, args.output_dir)
+
+    for truth_label, obs_2d in [("chirps", chirps_2d), ("tamsat", tamsat_2d)]:
+        if ENS_MODELS:
+            plot_ssr_lead_curves(preds, ENS_MODELS, obs_2d, INIT_DATES,
+                                 LEAD_DAYS, args.output_dir, truth_label)
+            plot_ssr_zonal(preds, ENS_MODELS, obs_2d, INIT_DATES,
+                           LEAD_DAYS, args.output_dir, truth_label)
+
     # ── CSV tables ──
     compute_and_save_tables(
-        preds, args.models, INIT_DATES, LEAD_DAYS_ANALYSIS,
+        preds, args.models, ENS_MODELS, INIT_DATES, LEAD_DAYS_ANALYSIS,
         chirps_2d, era5_2d, tamsat_2d,
         pairs_chirps, pairs_era5, pairs_tamsat,
         args.thresholds, args.output_dir,

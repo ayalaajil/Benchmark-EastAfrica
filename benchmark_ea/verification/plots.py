@@ -2,7 +2,17 @@
 Verification figures — all matplotlib/cartopy plotting for run_verification.
 
 Isolates the heavy plotting stack. Scoring is done in benchmark_ea.verification.
-scores; the pure metrics come from benchmark_ea.metrics.
+scores; the pure metrics come from benchmark_ea.metrics; colors, fonts and the
+PDF+PNG writer come from benchmark_ea.verification.style (single source of
+truth for the publication style).
+
+Figure conventions
+------------------
+- hue encodes exactly one thing per figure: model identity (categorical
+  palette) or lead day (ordinal blue ramp) — never both;
+- observations wear neutral inks with distinct dash patterns;
+- dashed lines mean "reference/ideal", grids are solid hairlines;
+- every figure is saved as vector PDF + 300-dpi PNG.
 """
 
 import os
@@ -17,6 +27,7 @@ from matplotlib.colors import TwoSlopeNorm
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 
+from benchmark_ea.domain import land_mask
 from benchmark_ea.metrics import (
     rank_histogram,
     reliability_diagram_local,
@@ -24,372 +35,521 @@ from benchmark_ea.metrics import (
     compute_ece,
 )
 from benchmark_ea.verification.scores import (
+    acc_pooled,
     area_mean_ts,
-    compute_temporal_metrics,
     crpss_maps_vs_climatology,
     gather_pairs,
     gather_pairs_with_local_thresh,
+    seasonal_mean_field,
     spatial_metric_maps,
+    spread_skill_pooled,
+    ssr_by_lat,
+)
+from benchmark_ea.verification.style import (
+    CMAP_BIAS,
+    CMAP_ERROR,
+    CMAP_SKILL,
+    BORDER_LW,
+    COAST_LW,
+    FULL_WIDTH,
+    GRID,
+    INK,
+    INK2,
+    LAND_COLOR,
+    MODEL_COLORS,
+    MODEL_LABELS,
+    MUTED,
+    NAN_COLOR,
+    OBS_STYLES,
+    OCEAN_COLOR,
+    REF_LINE,
+    grid_y,
+    lead_color,
+    panel_label,
+    savefig,
 )
 
-# ── Plot styling ──────────────────────────────────────────────────────────────
-
-COLORS = {
-    "fourcastnet": "#d4a017",
-    "gencast":     "#2196F3",
-    "graphcast":   "#E53935",
-    "climatology": "#999999",
-}
-MODEL_LABELS = {
-    "fourcastnet": "FourCastNet",
-    "gencast":     "GenCast",
-    "graphcast":   "GraphCast",
-    "climatology": "Climatology",
-}
 MIN_COUNT_RELIABILITY = 200
-PERCENTILES      = [20, 40, 60, 80]
-PCTILE_LABELS    = {20: "Light rain", 40: "Moderate rain",
-                    60: "Heavy rain",  80: "Intense rain"}
-
-
-def savefig(fig, path, **kw):
-    fig.savefig(path, dpi=150, bbox_inches="tight", **kw)
-    plt.close(fig)
-    print(f"  saved → {path}")
+PERCENTILES   = [20, 40, 60, 80]
+PCTILE_LABELS = {20: "Light rain", 40: "Moderate rain",
+                 60: "Heavy rain",  80: "Intense rain"}
 
 
 def _roll(series, win=7):
     return series.rolling(win, center=True, min_periods=3).mean()
 
 
-def plot_crpss_maps(preds, models, obs_2d, init_dates, lead_days, out,
-                    obs_label="chirps"):
-    """CRPSS-vs-climatology maps, one row per lead day, one column per model."""
-    from matplotlib.colors import TwoSlopeNorm
+def _month_axis(ax):
+    ax.xaxis.set_major_locator(mdates.MonthLocator())
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%b"))
 
-    leads = [ld for ld in lead_days]
-    crpss_by_lead = {ld: crpss_maps_vs_climatology(preds, models, obs_2d,
-                                                   init_dates, ld)
-                     for ld in leads}
-    lat = preds[models[0]].lat.values
-    lon = preds[models[0]].lon.values
-    proj = ccrs.PlateCarree()
-    norm = TwoSlopeNorm(vmin=-1.0, vcenter=0.0, vmax=1.0)
-    extent = [lon.min() - 0.5, lon.max() + 0.5, lat.min() - 0.5, lat.max() + 0.5]
-    cmap = plt.get_cmap("RdBu").copy()
-    cmap.set_bad("#d9d9d9")
 
-    nrow, ncol = len(leads), len(models)
-    fig, axes = plt.subplots(nrow, ncol, figsize=(5.5 * ncol, 4.8 * nrow),
-                             squeeze=False, subplot_kw={"projection": proj})
-    im = None
-    for r, ld in enumerate(leads):
-        for c, m in enumerate(models):
-            ax = axes[r][c]
-            sk = crpss_by_lead[ld].get(m)
-            ax.set_extent(extent, crs=proj)
-            ax.add_feature(cfeature.OCEAN, facecolor="#dce9f5", zorder=0)
-            ax.add_feature(cfeature.LAND,  facecolor="#f7f7f2", zorder=0)
-            if sk is not None:
-                disp = np.clip(sk, -1.0, 1.0)
-                im = ax.pcolormesh(lon, lat, np.ma.masked_invalid(disp),
-                                   norm=norm, cmap=cmap, transform=proj,
-                                   shading="nearest", zorder=1)
-                ax.contour(lon, lat, disp, levels=[0.0], colors="black",
-                           linewidths=1.6, transform=proj, zorder=3)
-            ax.add_feature(cfeature.COASTLINE, linewidth=0.8, zorder=4)
-            ax.add_feature(cfeature.BORDERS, linewidth=0.4, linestyle=":", zorder=4)
-            if r == 0:
-                ax.set_title(MODEL_LABELS.get(m, m), fontsize=13, fontweight="bold")
-            if c == 0:
-                ax.text(-0.08, 0.5, f"lead {ld} d", transform=ax.transAxes,
-                        rotation=90, va="center", ha="center", fontsize=12,
-                        fontweight="bold")
-    if im is not None:
-        cbar = fig.colorbar(im, ax=axes, orientation="horizontal",
-                            fraction=0.04, pad=0.05, shrink=0.5)
-        cbar.set_label("CRPS skill score vs climatology  "
-                       "(blue = skill, red = worse, black = 0)", fontsize=11)
-    fig.suptitle(f"CRPS skill score vs climatology — {obs_label.upper()}",
-                 fontsize=15, fontweight="bold", y=0.99)
-    path = os.path.join(out, f"crpss_maps_vs_climatology_{obs_label}.png")
-    savefig(fig, path)
-    plt.close(fig)
-    print(f"  {os.path.basename(path)}")
+def _lead_handles(lead_days):
+    return [Line2D([0], [0], color=lead_color(i, len(lead_days)), lw=1.6,
+                   label=f"Lead day {ld}") for i, ld in enumerate(lead_days)]
 
+
+def _model_handles(models, lw=1.6):
+    return [Line2D([0], [0], color=MODEL_COLORS[m], lw=lw,
+                   label=MODEL_LABELS[m]) for m in models]
+
+
+def _map_chrome(ax, extent, proj, left_labels=False, bottom_labels=False):
+    """Base map styling: recessive land/ocean, thin coasts, hairline graticule."""
+    ax.set_extent(extent, crs=proj)
+    ax.add_feature(cfeature.OCEAN, facecolor=OCEAN_COLOR, zorder=0)
+    ax.add_feature(cfeature.LAND, facecolor=LAND_COLOR, zorder=0)
+    ax.add_feature(cfeature.COASTLINE, linewidth=COAST_LW, zorder=4)
+    ax.add_feature(cfeature.BORDERS, linewidth=BORDER_LW, zorder=4,
+                   edgecolor=INK2)
+    gl = ax.gridlines(draw_labels=True, linewidth=0.3, color=GRID,
+                      alpha=0.8, linestyle="-")
+    gl.top_labels = gl.right_labels = False
+    gl.left_labels = left_labels
+    gl.bottom_labels = bottom_labels
+    gl.xlabel_style = gl.ylabel_style = {"size": 5.5, "color": MUTED}
+    return gl
+
+
+# ── [1] Area-mean timeseries ──────────────────────────────────────────────────
 
 def plot_timeseries(preds, models, init_dates, lead_days,
                     chirps_lookup, era5_lookup, tamsat_lookup, out):
     print("\n[1] Timeseries …")
     ts_models = {m: {ld: area_mean_ts(preds, m, init_dates, ld) for ld in lead_days}
                  for m in models}
+    obs_lookups = {"CHIRPS": chirps_lookup, "ERA5": era5_lookup,
+                   "TAMSAT": tamsat_lookup}
 
     fig, axes = plt.subplots(len(lead_days), 1,
-                              figsize=(14, 4 * len(lead_days)), sharex=True)
-    for ax, ld in zip(axes, lead_days):
+                             figsize=(FULL_WIDTH, 1.55 * len(lead_days) + 0.5),
+                             sharex=True, sharey=True)
+    for ax, ld in zip(np.atleast_1d(axes), lead_days):
         valid_dates = init_dates + pd.Timedelta(days=ld)
         for m in models:
             s = ts_models[m][ld]
-            ax.plot(s.index, s.values, label=MODEL_LABELS[m],
-                    color=COLORS[m], linewidth=1.4, alpha=0.85)
-        ax.plot(valid_dates,
-                [chirps_lookup.get(d.date(), np.nan) for d in valid_dates],
-                "k-", lw=2, label="CHIRPS", zorder=5)
-        ax.plot(valid_dates,
-                [era5_lookup.get(d.date(), np.nan) for d in valid_dates],
-                color="#2E7D32", ls="--", lw=2, label="ERA5", zorder=5)
-        ax.plot(valid_dates,
-                [tamsat_lookup.get(d.date(), np.nan) for d in valid_dates],
-                color="#8B4513", ls="-.", lw=2, label="TAMSAT", zorder=5)
-        ax.set_ylabel("mm / day", fontsize=10)
-        ax.set_title(f"Lead day {ld}", fontsize=11, fontweight="bold")
-        ax.grid(alpha=0.25)
-        if ld == lead_days[0]:
-            ax.legend(ncol=6, fontsize=9, loc="upper right")
+            ax.plot(s.index, s.values, color=MODEL_COLORS[m], lw=1.1, alpha=0.9)
+        for obs_label, lookup in obs_lookups.items():
+            ax.plot(valid_dates,
+                    [lookup.get(d.date(), np.nan) for d in valid_dates],
+                    lw=1.3, zorder=5, **OBS_STYLES[obs_label])
+        ax.set_ylabel("mm day$^{-1}$")
+        ax.set_title(f"Lead day {ld}", loc="left")
+        grid_y(ax)
 
-    axes[-1].xaxis.set_major_formatter(mdates.DateFormatter("%b %d"))
-    axes[-1].xaxis.set_major_locator(mdates.WeekdayLocator(byweekday=mdates.MO))
-    fig.autofmt_xdate()
-    fig.suptitle("East Africa area-mean daily precipitation", fontsize=13, y=1.01)
-    plt.tight_layout()
-    savefig(fig, os.path.join(out, "timeseries.png"))
+    _month_axis(np.atleast_1d(axes)[-1])
+    fig.legend(handles=_model_handles(models, lw=1.4) +
+               [Line2D([0], [0], lw=1.4, label=k, **OBS_STYLES[k])
+                for k in obs_lookups],
+               loc="outside lower center", ncol=len(models) + 3)
+    fig.suptitle("East Africa area-mean daily precipitation — MAM 2024")
+    savefig(fig, out, "timeseries")
 
 
-def plot_temporal_skill(preds, models, init_dates, lead_days, chirps_2d, out):
-    print("\n[2] Temporal skill curves …")
-    temporal = {m: {ld: compute_temporal_metrics(preds, m, chirps_2d, init_dates, ld)
-                    for ld in lead_days}
-                for m in models}
+# ── [2] Temporal error curves ─────────────────────────────────────────────────
 
-    _obs_ts = pd.Series(
-        {pd.Timestamp(d): float(np.nanmean(v)) for d, v in chirps_2d.items()}
-    ).sort_index()
-
+def plot_temporal_bias_mae(temporal, models, lead_days, out):
+    """Bias and MAE vs valid date (7-day rolling mean), one column per lead."""
+    print("\n[2] Temporal bias/MAE curves …")
     nld = len(lead_days)
-    _max_bias = max(
-        temporal[m][ld]["bias"].abs().quantile(0.98)
-        for m in models for ld in lead_days
-    )
+    max_bias = max(temporal[m][ld]["bias"].abs().quantile(0.98)
+                   for m in models for ld in lead_days)
 
-    # Bias + MAE
-    fig, axes = plt.subplots(2, nld, figsize=(5.5 * nld, 10),
-                              sharey="row", sharex="col")
+    fig, axes = plt.subplots(2, nld, figsize=(FULL_WIDTH, 3.6),
+                             sharey="row", sharex="col")
     for col, ld in enumerate(lead_days):
         for m in models:
             axes[0, col].plot(_roll(temporal[m][ld]["bias"].dropna()),
-                              color=COLORS[m], lw=2, label=MODEL_LABELS[m])
+                              color=MODEL_COLORS[m], lw=1.2)
             axes[1, col].plot(_roll(temporal[m][ld]["mae"].dropna()),
-                              color=COLORS[m], lw=2)
-        axes[0, col].axhline(0, color="#333333", ls="--", lw=1, alpha=0.7)
-        axes[0, col].set_ylim(-_max_bias, _max_bias)
-        axes[0, col].set_title(f"Lead day {ld}", fontsize=12, fontweight="bold")
+                              color=MODEL_COLORS[m], lw=1.2)
+        axes[0, col].axhline(0, **REF_LINE)
+        axes[0, col].set_ylim(-max_bias, max_bias)
+        axes[0, col].set_title(f"Lead day {ld}")
         for row in range(2):
-            axes[row, col].grid(alpha=0.2, lw=0.5)
-            axes[row, col].tick_params(labelsize=11)
-            axes[row, col].xaxis.set_major_locator(mdates.MonthLocator())
-            axes[row, col].xaxis.set_major_formatter(mdates.DateFormatter("%b"))
-        if col == 0:
-            axes[0, col].set_ylabel("Bias (mm/day)", fontsize=14)
-            axes[1, col].set_ylabel("MAE (mm/day)",  fontsize=14)
+            grid_y(axes[row, col])
+            _month_axis(axes[row, col])
+    axes[0, 0].set_ylabel("Bias (mm day$^{-1}$)")
+    axes[1, 0].set_ylabel("MAE (mm day$^{-1}$)")
 
-    fig.legend(handles=[Line2D([0], [0], color=COLORS[m], lw=2.5,
-                               label=MODEL_LABELS[m]) for m in models],
-               loc="lower center", ncol=3, fontsize=14,
-               bbox_to_anchor=(0.5, -0.02), frameon=True)
-    fig.suptitle("Temporal Forecast Errors vs CHIRPS", fontsize=16, fontweight="bold", y=1.01)
-    plt.tight_layout(); plt.subplots_adjust(bottom=0.08)
-    savefig(fig, os.path.join(out, "temporal_skill_bias_mae.png"))
-
-    # GenCast: CRPS / spread / SSR
-    gc_metrics = ["crps", "spread", "spread_skill_ratio"]
-    gc_labels  = ["CRPS (mm/day)", "Ensemble spread (mm/day)", "Spread / RMSE"]
-    fig2, axes2 = plt.subplots(3, nld, figsize=(5.5 * nld, 10),
-                                sharey="row", sharex="col")
-    gc_color = COLORS["gencast"]
-    for col, ld in enumerate(lead_days):
-        df = temporal["gencast"][ld]
-        for row, (metric, ylabel) in enumerate(zip(gc_metrics, gc_labels)):
-            ax = axes2[row, col]
-            ax.plot(_roll(df[metric].dropna()), color=gc_color, lw=2)
-            ax.grid(alpha=0.2, lw=0.5)
-            ax.tick_params(labelsize=11)
-            ax.xaxis.set_major_locator(mdates.MonthLocator())
-            ax.xaxis.set_major_formatter(mdates.DateFormatter("%b"))
-            if row == 0: ax.set_title(f"Lead day {ld}", fontsize=12, fontweight="bold")
-            if col == 0: ax.set_ylabel(ylabel, fontsize=11)
-
-    fig2.suptitle("GenCast: CRPS, spread, spread/skill ratio vs CHIRPS",
-                  fontsize=14, fontweight="bold", y=1.02)
-    plt.tight_layout()
-    savefig(fig2, os.path.join(out, "gencast_crps_spread.png"))
-
-    return temporal
+    fig.legend(handles=_model_handles(models),
+               loc="outside lower center", ncol=len(models))
+    fig.suptitle("Forecast error vs CHIRPS (7-day rolling mean)")
+    savefig(fig, out, "temporal_bias_mae")
 
 
-def plot_rank_histograms(preds, models, init_dates, lead_days,
-                         chirps_2d, era5_2d, tamsat_2d, out):
-    print("\n[3] Rank histograms …")
-    obs_rows = [("CHIRPS", chirps_2d), ("ERA5", era5_2d), ("TAMSAT", tamsat_2d)]
-    n_rows = len(obs_rows)
+def plot_ensemble_temporal(temporal, ens_models, lead_days, out):
+    """CRPS, spread and spread/skill vs valid date; rows = ensemble models,
+    columns = metrics, one curve per lead day (ordinal blue ramp)."""
+    print("\n[3] Ensemble CRPS / spread / SSR curves …")
+    metrics = [("crps",               "CRPS (mm day$^{-1}$)"),
+               ("spread",             "Spread (mm day$^{-1}$)"),
+               ("spread_skill_ratio", "Spread / RMSE")]
 
-    fig, axes = plt.subplots(n_rows, len(lead_days),
-                              figsize=(4 * len(lead_days), 4 * n_rows))
-    for row, (obs_label, obs_2d) in enumerate(obs_rows):
-        for col, ld in enumerate(lead_days):
-            ax = axes[row, col]
-            fc_ens, obs = gather_pairs(preds, "gencast", obs_2d, init_dates, ld)
-            if obs.size == 0:
-                ax.set_title(f"{obs_label} LD={ld}\n(no data)")
-                continue
-            freq   = rank_histogram(fc_ens, obs)
-            n_bins = len(freq)
-            ax.bar(range(n_bins), freq, color=COLORS["gencast"], alpha=0.75, width=0.8)
-            ax.axhline(1.0 / n_bins, color="k", ls="--", lw=1.2)
-            ax.set_title(f"Lead day {ld}", fontsize=10)
-            ax.set_xlabel("Rank", fontsize=11)
-            ax.set_ylabel("Frequency", fontsize=11)
-            ax.set_ylim(0, 0.6)
-            ax.grid(axis="y", alpha=0.3)
-        axes[row, 0].annotate(
-            obs_label, xy=(-0.32, 0.5), xycoords="axes fraction",
-            fontsize=13, fontweight="bold", va="center", ha="center",
-            rotation=90, annotation_clip=False,
-        )
+    nrow = len(ens_models)
+    fig, axes = plt.subplots(nrow, 3, figsize=(FULL_WIDTH, 1.85 * nrow + 0.9),
+                             sharex=True, sharey="col", squeeze=False)
+    for r, m in enumerate(ens_models):
+        for c, (metric, label) in enumerate(metrics):
+            ax = axes[r, c]
+            for i, ld in enumerate(lead_days):
+                ax.plot(_roll(temporal[m][ld][metric].dropna()),
+                        color=lead_color(i, len(lead_days)), lw=1.2)
+            grid_y(ax)
+            _month_axis(ax)
+            if r == 0:
+                ax.set_title(label)
+        axes[r, 0].set_ylabel(MODEL_LABELS[m], fontsize=8.5,
+                              fontweight="bold", color=INK)
 
-    fig.suptitle("GenCast rank histograms across lead days", fontsize=15)
-    plt.tight_layout()
-    savefig(fig, os.path.join(out, "rank_histograms.png"))
+    fig.legend(handles=_lead_handles(lead_days),
+               loc="outside lower center", ncol=len(lead_days))
+    fig.suptitle("Ensemble skill and dispersion vs CHIRPS (7-day rolling mean)")
+    savefig(fig, out, "ensemble_crps_spread_ssr")
 
 
-def plot_reliability_local(preds, init_dates, chirps_2d, era5_2d, tamsat_2d,
-                            chirps_pctile, era5_pctile, tamsat_pctile, out):
-    print("\n[4] Local-percentile reliability diagrams …")
-    obs_setups = [
-        ("CHIRPS", chirps_2d, chirps_pctile),
-        ("ERA5",   era5_2d,   era5_pctile),
-        ("TAMSAT", tamsat_2d, tamsat_pctile),
-    ]
+# ── [4] Rank histograms (tie-aware) ───────────────────────────────────────────
+
+def plot_rank_histograms(preds, ens_models, init_dates, lead_days,
+                         obs_sources, out):
+    """Talagrand rank histograms with randomized tie ranks (Hamill 2001) —
+    the appropriate form for rainfall, where exact zeros produce heavy ties.
+    One figure per ensemble model; rows = observation datasets."""
+
+    print("\n[4] Rank histograms (tie-aware) …")
+    for model in ens_models:
+        freqs = {}
+        for obs_label, obs_2d in obs_sources.items():
+            for ld in lead_days:
+                fc_ens, obs = gather_pairs(preds, model, obs_2d, init_dates, ld)
+                if obs.size:
+                    freqs[(obs_label, ld)] = rank_histogram(fc_ens, obs)
+        if not freqs:
+            continue
+        ymax = 1.15 * max(f.max() for f in freqs.values())
+
+        n_rows, n_cols = len(obs_sources), len(lead_days)
+        fig, axes = plt.subplots(n_rows, n_cols,
+                                 figsize=(FULL_WIDTH, 1.45 * n_rows + 0.8),
+                                 sharex=True, sharey=True, squeeze=False)
+        for row, obs_label in enumerate(obs_sources):
+            for col, ld in enumerate(lead_days):
+                ax = axes[row, col]
+                freq = freqs.get((obs_label, ld))
+                if freq is None:
+                    ax.set_axis_off()
+                    continue
+                n_bins = len(freq)
+                ax.bar(range(n_bins), freq, color=MODEL_COLORS[model],
+                       width=0.82)
+                ax.axhline(1.0 / n_bins, **REF_LINE)
+                ax.set_ylim(0, ymax)
+                ax.set_xticks([0, (n_bins - 1) // 2, n_bins - 1])
+                grid_y(ax)
+                if row == 0:
+                    ax.set_title(f"Lead day {ld}")
+                if row == n_rows - 1:
+                    ax.set_xlabel("Rank of observation")
+            axes[row, 0].set_ylabel(f"{obs_label}\nfrequency")
+
+        fig.legend(handles=[Line2D([0], [0], label="Uniform (calibrated)",
+                                   **REF_LINE)],
+                   loc="outside lower center")
+        fig.suptitle(f"{MODEL_LABELS[model]} rank histograms MAM 2024")
+        savefig(fig, out, f"rank_histograms_{model}")
+
+
+# ── [5] Reliability diagrams ──────────────────────────────────────────────────
+
+def plot_reliability_local(preds, ens_models, init_dates, obs_setups, out):
+    """Reliability at local percentile thresholds (lead day 1), one figure per
+    ensemble model; rows = observation datasets, columns = percentiles."""
+    print("\n[5] Local-percentile reliability diagrams …")
     n_rows = len(obs_setups)
-    gc_color = COLORS["gencast"]
 
-    # Pre-compute
-    cache = {}
-    for r, (lbl, obs_2d, tmaps) in enumerate(obs_setups):
-        for c, q in enumerate(PERCENTILES):
-            fc, ob, th = gather_pairs_with_local_thresh(
-                preds, "gencast", obs_2d, tmaps[q], init_dates, lead_day=1)
-            pl, of, ct = reliability_diagram_local(fc, ob, th)
-            cache[(r, c)] = (np.array(pl), np.array(of), np.array(ct))
+    for model in ens_models:
+        color = MODEL_COLORS[model]
+        cache = {}
+        for r, (lbl, obs_2d, tmaps) in enumerate(obs_setups):
+            for c, q in enumerate(PERCENTILES):
+                fc, ob, th = gather_pairs_with_local_thresh(
+                    preds, model, obs_2d, tmaps[q], init_dates, lead_day=1)
+                pl, of, ct = reliability_diagram_local(fc, ob, th)
+                cache[(r, c)] = (np.array(pl), np.array(of), np.array(ct))
 
-    fig, axes = plt.subplots(n_rows, len(PERCENTILES),
-                              figsize=(4.5 * len(PERCENTILES), 4.5 * n_rows),
-                              sharey=True, sharex=True)
-    for row, (obs_label, _, _x) in enumerate(obs_setups):
-        for col, q in enumerate(PERCENTILES):
-            ax = axes[row, col]
-            pl, of, ct = cache[(row, col)]
-            lo_ci, hi_ci = wilson_ci(ct, of)
-            ok = ct >= MIN_COUNT_RELIABILITY
-            pv = pl[ok]
+        fig, axes = plt.subplots(n_rows, len(PERCENTILES),
+                                 figsize=(FULL_WIDTH, 1.72 * n_rows + 0.9),
+                                 sharey=True, sharex=True, squeeze=False)
+        for row, (obs_label, _o, _t) in enumerate(obs_setups):
+            for col, q in enumerate(PERCENTILES):
+                ax = axes[row, col]
+                pl, of, ct = cache[(row, col)]
+                lo_ci, hi_ci = wilson_ci(ct, of)
+                ok = ct >= MIN_COUNT_RELIABILITY
+                pv = pl[ok]
 
-            ax.plot([0, 1], [0, 1], color="#333333", ls="--", lw=1, alpha=0.6, zorder=1)
-            ax.axhline(q / 100, color="#999999", ls=":", lw=1.2, zorder=1)
-            ax.fill_between([0, 1], [q / 100, q / 100], [0, 0],
-                            color="#f5f5f5", zorder=0)
-            if ok.any():
-                ax.fill_between(pv, lo_ci[ok], hi_ci[ok],
-                                color=gc_color, alpha=0.18, zorder=2, lw=0)
-                ax.plot(pv, of[ok], "-", color=gc_color, lw=2, zorder=3)
-                ax.scatter(pv, of[ok], s=55, color=gc_color,
-                           edgecolors="white", linewidths=0.6, zorder=4)
-                ece = compute_ece(pl[ok], of[ok], ct[ok])
-                ax.text(0.97, 0.04, f"ECE={ece:.3f}",
-                        transform=ax.transAxes, ha="right", va="bottom",
-                        fontsize=8.5, color="#333333",
-                        bbox=dict(fc="white", ec="#cccccc", pad=2, lw=0.8))
+                ax.plot([0, 1], [0, 1], **REF_LINE)
+                ax.axhline(q / 100, color=MUTED, ls=(0, (1, 1.2)), lw=0.8)
+                if ok.any():
+                    ax.fill_between(pv, lo_ci[ok], hi_ci[ok],
+                                    color=color, alpha=0.15, lw=0)
+                    ax.plot(pv, of[ok], color=color, lw=1.3)
+                    ax.scatter(pv, of[ok], s=11, color=color, zorder=4,
+                               edgecolors="white", linewidths=0.5)
+                    ece = compute_ece(pl[ok], of[ok], ct[ok])
+                    ax.text(0.96, 0.05, f"ECE {ece:.3f}",
+                            transform=ax.transAxes, ha="right", va="bottom",
+                            fontsize=6, color=INK2)
 
-            ax.set_xlim(0, 1); ax.set_ylim(0, 1)
-            ax.grid(alpha=0.2, lw=0.5, color="#aaaaaa")
-            ax.tick_params(labelsize=9)
-            if row == 0:
-                ax.set_title(f">P{q}  —  {PCTILE_LABELS[q]}", fontsize=11,
-                             fontweight="bold", pad=6)
-            if row == n_rows - 1:
-                ax.set_xlabel("Forecast probability", fontsize=10)
-            if col == 0:
-                ax.set_ylabel("Observed frequency", fontsize=10)
+                ax.set_xlim(0, 1)
+                ax.set_ylim(0, 1)
+                ax.set_aspect("equal")
+                ax.set_xticks([0, 0.5, 1])
+                ax.set_yticks([0, 0.5, 1])
+                if row == 0:
+                    ax.set_title(f">P{q} · {PCTILE_LABELS[q]}")
+                if row == n_rows - 1:
+                    ax.set_xlabel("Forecast probability")
+            axes[row, 0].set_ylabel(f"{obs_label}\nobserved frequency")
 
-        axes[row, 0].annotate(
-            obs_label, xy=(-0.32, 0.5), xycoords="axes fraction",
-            fontsize=12, fontweight="bold", va="center", ha="center",
-            rotation=90, annotation_clip=False,
-        )
-
-    fig.legend(handles=[
-        Line2D([0], [0], color=gc_color, lw=2.5, label="GenCast"),
-        Patch(facecolor=gc_color, alpha=0.3, label="95% Wilson CI"),
-        Line2D([0], [0], color="#333333", ls="--", lw=1.2, label="Perfect reliability"),
-        Line2D([0], [0], color="#999999", ls=":", lw=1.2, label="Climatology"),
-    ], loc="lower center", ncol=4, fontsize=10,
-       bbox_to_anchor=(0.5, -0.02), frameon=True, framealpha=0.95)
-
-    fig.suptitle("GenCast reliability — local percentile thresholds (Lead day 1)",
-                 fontsize=13, fontweight="bold", y=1.01)
-    plt.tight_layout(); plt.subplots_adjust(left=0.10, bottom=0.07)
-    savefig(fig, os.path.join(out, "reliability_local_percentile.png"))
+        fig.legend(handles=[
+            Line2D([0], [0], color=color, lw=1.5, label=MODEL_LABELS[model]),
+            Patch(facecolor=color, alpha=0.15, label="95% Wilson CI"),
+            Line2D([0], [0], label="Perfect reliability", **REF_LINE),
+            Line2D([0], [0], color=MUTED, ls=(0, (1, 1.2)), lw=0.8,
+                   label="Climatological base rate"),
+        ], loc="outside lower center", ncol=4)
+        fig.suptitle(f"{MODEL_LABELS[model]} reliability, local percentile "
+                     "thresholds, lead day 1")
+        savefig(fig, out, f"reliability_{model}")
 
 
-def plot_spatial_maps(preds, models, init_dates, chirps_2d, era5_2d, lead_days, out):
-    print("\n[5] Spatial bias/RMSE maps …")
-    _CMAP  = {"bias": "RdBu_r", "mae": "YlOrRd", "rmse": "YlOrRd"}
-    _LABEL = {"bias": "Bias (mm/day)", "mae": "MAE (mm/day)", "rmse": "RMSE (mm/day)"}
-    proj   = ccrs.PlateCarree()
-    lat    = preds[models[0]].lat.values
-    lon    = preds[models[0]].lon.values
+# ── [6] Spatial error maps ────────────────────────────────────────────────────
+
+def plot_spatial_maps(preds, models, init_dates, chirps_2d, era5_2d,
+                      lead_days, out):
+    """Spatial bias/RMSE maps: one figure per (obs source, lead day), two
+    rows (bias, RMSE), one column per model."""
+    print("\n[6] Spatial bias/RMSE maps …")
+    proj = ccrs.PlateCarree()
+    lat = preds[models[0]].lat.values
+    lon = preds[models[0]].lon.values
     extent = [lon.min() - 0.5, lon.max() + 0.5, lat.min() - 0.5, lat.max() + 0.5]
+    # Geography-based mask, not the obs product's own NaN pattern: CHIRPS is
+    # NaN over ocean so those maps look right by accident, but ERA5 is a full
+    # reanalysis with real values over open ocean and would otherwise paint
+    # right over the OCEAN map feature.
+    land = land_mask(lat, lon) > 0
 
     for obs_label, obs_2d in [("CHIRPS", chirps_2d), ("ERA5", era5_2d)]:
-        for ld in [lead_days[0], lead_days[-1]]:
+        for ld in lead_days:
             ds_maps = {m: spatial_metric_maps(preds, m, obs_2d, init_dates, ld)
                        for m in models}
-            metrics = ("bias", "rmse")
             fig, axes = plt.subplots(
-                len(metrics), len(models),
-                figsize=(5.8 * len(models), 4.2 * len(metrics)),
-                subplot_kw={"projection": proj},
-            )
-            for row, metric in enumerate(metrics):
-                all_vals = np.concatenate([
-                    ds_maps[m][metric].values.flatten()
-                    for m in models if ds_maps[m] is not None
-                ])
-                all_vals = all_vals[np.isfinite(all_vals)]
+                2, len(models),
+                figsize=(FULL_WIDTH, 4.1),
+                subplot_kw={"projection": proj}, squeeze=False)
+
+            for row, (metric, cmap, label) in enumerate([
+                    ("bias", CMAP_BIAS,  "Bias (mm day$^{-1}$)"),
+                    ("rmse", CMAP_ERROR, "RMSE (mm day$^{-1}$)")]):
+                vals = np.concatenate([
+                    ds_maps[m][metric].where(land).values.ravel()
+                    for m in models if ds_maps[m] is not None])
+                vals = vals[np.isfinite(vals)]
                 if metric == "bias":
-                    vmax = np.percentile(np.abs(all_vals), 97)
+                    vmax = np.percentile(np.abs(vals), 97)
                     norm = TwoSlopeNorm(vmin=-vmax, vcenter=0, vmax=vmax)
                 else:
-                    norm = plt.Normalize(vmin=0, vmax=np.percentile(all_vals, 97))
+                    norm = plt.Normalize(vmin=0, vmax=np.percentile(vals, 97))
 
+                im = None
                 for col, m in enumerate(models):
                     ax = axes[row, col]
-                    ax.set_extent(extent, crs=proj)
-                    ax.add_feature(cfeature.LAND,      facecolor="#f5f5f0", zorder=0)
-                    ax.add_feature(cfeature.OCEAN,     facecolor="#dce9f5", zorder=0)
-                    ax.add_feature(cfeature.COASTLINE, linewidth=0.7, zorder=3)
-                    ax.add_feature(cfeature.BORDERS,   linewidth=0.45, linestyle=":", zorder=3)
+                    _map_chrome(ax, extent, proj,
+                                left_labels=(col == 0),
+                                bottom_labels=(row == 1))
                     if ds_maps[m] is not None:
-                        im = ax.pcolormesh(lon, lat, ds_maps[m][metric].values,
-                                           norm=norm, cmap=_CMAP[metric],
-                                           transform=proj, shading="nearest", zorder=2)
-                        fig.colorbar(im, ax=ax, orientation="vertical",
-                                     shrink=0.85, pad=0.02).set_label(_LABEL[metric], fontsize=8)
+                        im = ax.pcolormesh(
+                            lon, lat,
+                            np.ma.masked_invalid(ds_maps[m][metric].where(land).values),
+                            norm=norm, cmap=cmap, transform=proj,
+                            shading="nearest", zorder=1)
                     if row == 0:
-                        ax.set_title(MODEL_LABELS[m], fontsize=12, fontweight="bold", pad=6)
-                    if col == 0:
-                        ax.text(-0.18, 0.5, _LABEL[metric], va="center", ha="center",
-                                rotation=90, transform=ax.transAxes, fontsize=10)
+                        ax.set_title(MODEL_LABELS[m])
+                if im is not None:
+                    cbar = fig.colorbar(im, ax=list(axes[row]), shrink=0.85,
+                                        pad=0.015, fraction=0.035)
+                    cbar.set_label(label, fontsize=7)
+                    cbar.ax.tick_params(labelsize=6)
+                    cbar.outline.set_linewidth(0.4)
 
-            fig.suptitle(f"Spatial error maps vs {obs_label} | lead day {ld}",
-                         fontsize=13, fontweight="bold", y=1.02)
-            plt.tight_layout(h_pad=1.0, w_pad=0.5)
-            savefig(fig, os.path.join(out, f"spatial_maps_{obs_label.lower()}_ld{ld}.png"))
+            fig.suptitle(f"Spatial forecast errors vs {obs_label}, "
+                         f"lead day {ld}, MAM 2024")
+            savefig(fig, out, f"spatial_maps_{obs_label.lower()}_ld{ld}")
+
+
+# ── [7] CRPSS maps vs climatology ─────────────────────────────────────────────
+
+def plot_crpss_maps(preds, models, obs_2d, init_dates, lead_days, out,
+                    obs_label="chirps"):
+    """Per-cell CRPS skill score vs the out-of-sample climatology baseline;
+    rows = models, columns = lead days. Hyper-arid cells are masked gray."""
+    print("\n[7] CRPSS-vs-climatology maps …")
+    crpss = {ld: crpss_maps_vs_climatology(preds, models, obs_2d,
+                                           init_dates, ld)
+             for ld in lead_days}
+    lat = preds[models[0]].lat.values
+    lon = preds[models[0]].lon.values
+    proj = ccrs.PlateCarree()
+    extent = [lon.min() - 0.5, lon.max() + 0.5, lat.min() - 0.5, lat.max() + 0.5]
+    norm = TwoSlopeNorm(vmin=-1.0, vcenter=0.0, vmax=1.0)
+    cmap = plt.get_cmap(CMAP_SKILL).copy()
+    cmap.set_bad(NAN_COLOR)
+
+    nrow, ncol = len(models), len(lead_days)
+    fig, axes = plt.subplots(nrow, ncol,
+                             figsize=(FULL_WIDTH, 1.62 * nrow + 1.2),
+                             subplot_kw={"projection": proj}, squeeze=False)
+    im = None
+    for r, m in enumerate(models):
+        for c, ld in enumerate(lead_days):
+            ax = axes[r][c]
+            _map_chrome(ax, extent, proj,
+                        left_labels=(c == 0), bottom_labels=(r == nrow - 1))
+            sk = crpss[ld].get(m)
+            if sk is not None:
+                disp = np.clip(sk, -1.0, 1.0)
+                im = ax.pcolormesh(lon, lat, np.ma.masked_invalid(disp),
+                                   norm=norm, cmap=cmap, transform=proj,
+                                   shading="nearest", zorder=1)
+                ax.contour(lon, lat, disp, levels=[0.0], colors=INK,
+                           linewidths=0.7, transform=proj, zorder=3)
+            if r == 0:
+                ax.set_title(f"Lead day {ld}")
+            if c == 0:
+                ax.text(-0.28, 0.5, MODEL_LABELS[m], transform=ax.transAxes,
+                        rotation=90, va="center", ha="center", fontsize=8.5,
+                        fontweight="bold", color=INK)
+    if im is not None:
+        cbar = fig.colorbar(im, ax=axes, orientation="horizontal",
+                            fraction=0.035, pad=0.045, shrink=0.55)
+        cbar.set_label("CRPS skill score vs climatology "
+                       "(blue = beats climatology; black contour = 0; "
+                       "gray = hyper-arid, masked)", fontsize=7)
+        cbar.ax.tick_params(labelsize=6)
+        cbar.outline.set_linewidth(0.4)
+    fig.suptitle(f"CRPS skill score vs climatology, {obs_label.upper()}, "
+                 "MAM 2024")
+    savefig(fig, out, f"crpss_maps_{obs_label}")
+
+
+# ── [8] ACC vs lead day ───────────────────────────────────────────────────────
+
+def plot_acc_curves(preds, models, truth_sources, init_dates, lead_days, out):
+    """Pooled anomaly correlation vs lead day, one panel per truth source.
+    Anomalies are w.r.t. the truth's own per-cell seasonal mean."""
+    print("\n[8] ACC lead curves …")
+    acc = {}
+    for t_label, obs_2d in truth_sources.items():
+        clim_field = seasonal_mean_field(obs_2d)
+        for m in models:
+            acc[(t_label, m)] = [acc_pooled(preds, m, obs_2d, clim_field,
+                                            init_dates, ld)
+                                 for ld in lead_days]
+
+    fig, axes = plt.subplots(1, len(truth_sources),
+                             figsize=(FULL_WIDTH, 2.7), sharey=True)
+    lo = min(min(v) for v in acc.values())
+    for i, (ax, t_label) in enumerate(zip(np.atleast_1d(axes), truth_sources)):
+        for m in models:
+            ax.plot(lead_days, acc[(t_label, m)], color=MODEL_COLORS[m],
+                    lw=1.4, marker="o", ms=4, mec="white", mew=0.6)
+        ax.set_xticks(lead_days)
+        ax.set_xlabel("Lead day")
+        ax.set_title(f"vs {t_label}")
+        ax.set_ylim(min(0.0, lo - 0.05), 1.0)
+        grid_y(ax)
+        panel_label(ax, "ab"[i])
+    np.atleast_1d(axes)[0].set_ylabel("Anomaly correlation")
+
+    fig.legend(handles=_model_handles(models),
+               loc="outside lower center", ncol=len(models))
+    fig.suptitle("Anomaly correlation coefficient vs lead day, MAM 2024")
+    savefig(fig, out, "acc_lead_curves")
+    return acc
+
+
+# ── [9] Spread-skill vs lead day ──────────────────────────────────────────────
+
+def plot_ssr_lead_curves(preds, ens_models, obs_2d, init_dates, lead_days,
+                         out, truth_label="chirps"):
+    """(a) spread/skill ratio vs lead day; (b) its ingredients (spread, RMSE)
+    so a change in the ratio can be attributed. Both ensembles."""
+    print(f"\n[9] Spread-skill lead curves ({truth_label}) …")
+    stats = {m: [spread_skill_pooled(preds, m, obs_2d, init_dates, ld)
+                 for ld in lead_days] for m in ens_models}
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(FULL_WIDTH, 2.7))
+    for m in ens_models:
+        spread, rmse, ssr = zip(*stats[m])
+        ax1.plot(lead_days, ssr, color=MODEL_COLORS[m], lw=1.4,
+                 marker="o", ms=4, mec="white", mew=0.6)
+        ax2.plot(lead_days, rmse, color=MODEL_COLORS[m], lw=1.4,
+                 marker="o", ms=4, mec="white", mew=0.6)
+        ax2.plot(lead_days, spread, color=MODEL_COLORS[m], lw=1.4,
+                 ls=(0, (4, 2)), marker="o", ms=4, mec="white", mew=0.6)
+
+    ax1.axhline(1.0, **REF_LINE)
+    ax1.text(lead_days[-1], 1.0, "calibrated ", fontsize=6, color=INK2,
+             va="bottom", ha="right")
+    ax1.set_ylim(0, max(1.1, 1.1 * max(s[2] for v in stats.values() for s in v)))
+    ax1.set_ylabel("Spread / RMSE")
+    ax2.set_ylabel("mm day$^{-1}$")
+    for i, ax in enumerate((ax1, ax2)):
+        ax.set_xticks(lead_days)
+        ax.set_xlabel("Lead day")
+        grid_y(ax)
+        panel_label(ax, "ab"[i])
+
+    fig.legend(handles=_model_handles(ens_models) + [
+        Line2D([0], [0], color=INK2, lw=1.2, label="RMSE (ens. mean)"),
+        Line2D([0], [0], color=INK2, lw=1.2, ls=(0, (4, 2)), label="Spread"),
+    ], loc="outside lower center", ncol=4)
+    fig.suptitle("Ensemble spread-skill vs lead day, "
+                 f"truth = {truth_label.upper()}, MAM 2024")
+    savefig(fig, out, f"ssr_lead_curves_{truth_label}")
+
+
+def plot_ssr_zonal(preds, ens_models, obs_2d, init_dates, lead_days, out,
+                   truth_label="chirps"):
+    """Zonal (per-latitude) spread/skill profile, one panel per ensemble;
+    reveals where each ensemble is over/under-dispersive."""
+    print(f"\n[10] Zonal spread-skill profiles ({truth_label}) …")
+    lat = preds[ens_models[0]].lat.values
+
+    fig, axes = plt.subplots(1, len(ens_models), figsize=(FULL_WIDTH, 2.7),
+                             sharey=True, squeeze=False)
+    for i, (ax, m) in enumerate(zip(axes[0], ens_models)):
+        ax.axvspan(-5, 5, color="#f0efec", lw=0, zorder=0)
+        for j, ld in enumerate(lead_days):
+            ssr = ssr_by_lat(preds, m, obs_2d, init_dates, ld)
+            if ssr is not None:
+                ax.plot(lat, ssr, color=lead_color(j, len(lead_days)), lw=1.2)
+        ax.axhline(1.0, **REF_LINE)
+        ax.text(0, 0.02, "equatorial belt", fontsize=6, color=MUTED,
+                ha="center", va="bottom", transform=ax.get_xaxis_transform())
+        ax.set_xlim(lat.min(), lat.max())
+        ax.set_xlabel("Latitude (°N)")
+        ax.set_title(MODEL_LABELS[m])
+        grid_y(ax)
+        panel_label(ax, "ab"[i])
+    axes[0][0].set_ylabel("Spread / RMSE")
+    axes[0][0].set_ylim(bottom=0)
+
+    fig.legend(handles=_lead_handles(lead_days) +
+               [Line2D([0], [0], label="Calibrated (SSR = 1)", **REF_LINE)],
+               loc="outside lower center", ncol=len(lead_days) + 1)
+    fig.suptitle("Zonal spread-skill profile, "
+                 f"truth = {truth_label.upper()}, MAM 2024")
+    savefig(fig, out, f"ssr_zonal_{truth_label}")

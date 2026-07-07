@@ -1,12 +1,20 @@
 # Probabilistic Calibration
 
-GenCast is the only ensemble system here, so the probabilistic analysis focuses
-on it: is its forecast **uncertainty trustworthy**? (The deterministic models
-reduce to single-member ensembles, for which CRPS equals MAE.)
+GenCast and NeuralGCM are the ensemble systems here, so the probabilistic
+analysis focuses on them: is their forecast **uncertainty trustworthy**? (The
+deterministic models reduce to single-member ensembles, for which CRPS equals
+MAE.)
+
+!!! note "Figures below currently show GenCast"
+    The prose and figures on this page predate the NeuralGCM ensemble. The
+    pipeline now produces the equivalent NeuralGCM figures
+    (`ensemble_crps_spread_ssr.png`, `rank_histograms_neuralgcm.png`,
+    `reliability_neuralgcm.png`) — this page's narrative needs a pass to
+    incorporate them.
 
 ## CRPS, spread and spread–skill over time
 
-![GenCast CRPS, spread and spread-skill ratio over the season](../assets/figures/gencast_crps_spread.png){ loading=lazy }
+![GenCast and NeuralGCM CRPS, spread and spread-skill ratio over the season](../assets/figures/ensemble_crps_spread_ssr.png){ loading=lazy }
 
 Daily **CRPS** (top), **ensemble spread** (middle) and the **spread ÷ RMSE
 ratio** (bottom) for GenCast vs CHIRPS, one column per lead day.
@@ -20,11 +28,12 @@ ratio** (bottom) for GenCast vs CHIRPS, one column per lead day.
 
 ## Spread–skill ratio
 
-![GenCast spread-skill ratio vs lead](../assets/figures/ssr_lead_curves_chirps.png){ loading=lazy }
+![GenCast and NeuralGCM spread-skill ratio vs lead](../assets/figures/ssr_lead_curves_chirps.png){ loading=lazy }
 
 Left: the **spread–skill ratio (SSR = ensemble spread / ensemble-mean RMSE)**
-versus lead, with the under-dispersive region (SSR < 1) shaded. Right: the two
-ingredients — ensemble-mean RMSE and (calibrated) spread — separately.
+versus lead, for both ensembles. Right: the two ingredients — ensemble-mean
+RMSE and (calibrated) spread — separately. Analysis below is GenCast-only and
+needs a NeuralGCM pass.
 
 - The SSR is **below 1 at every lead**: GenCast is **under-dispersive
   (overconfident)** — its ensemble is too narrow for its error.
@@ -35,7 +44,7 @@ ingredients — ensemble-mean RMSE and (calibrated) spread — separately.
 
 ### Where is it under-dispersive?
 
-![GenCast zonal spread-skill ratio](../assets/figures/ssr_zonal_chirps.png){ loading=lazy }
+![GenCast and NeuralGCM zonal spread-skill ratio](../assets/figures/ssr_zonal_chirps.png){ loading=lazy }
 
 The same ratio resolved **by latitude**, one line per lead day, with the three
 zonal bands shaded.
@@ -48,7 +57,7 @@ zonal bands shaded.
 
 ## Rank histograms
 
-![GenCast Talagrand rank histograms](../assets/figures/rank_histograms.png){ loading=lazy }
+![GenCast Talagrand rank histograms](../assets/figures/rank_histograms_gencast.png){ loading=lazy }
 
 **Talagrand (verification-rank) histograms** for the 10-member GenCast ensemble,
 one row per reference, one column per lead day. A calibrated ensemble is flat
@@ -65,7 +74,7 @@ one row per reference, one column per lead day. A calibrated ensemble is flat
 
 ## Reliability diagrams
 
-![GenCast reliability at local percentile thresholds](../assets/figures/reliability_local_percentile.png){ loading=lazy }
+![GenCast reliability at local percentile thresholds](../assets/figures/reliability_gencast.png){ loading=lazy }
 
 **Reliability** of GenCast's exceedance probabilities at grid-cell-local
 percentile thresholds — P20 (light) → P80 (intense rain) — one row per reference,
