@@ -1,11 +1,10 @@
-name: Deploy docs
+name: Deploy website
 
 on:
   push:
     branches: [main]
     paths:
-      - 'docs/**'
-      - 'mkdocs.yml'
+      - 'website/**'
       - '.github/workflows/docs.yml'
   workflow_dispatch:
 
@@ -17,8 +16,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Publish website/ to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
         with:
-          python-version: '3.11'
-      - run: pip install -r requirements-docs.txt
-      - run: mkdocs gh-deploy --force --clean
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./website
+          force_orphan: true
