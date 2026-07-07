@@ -7,7 +7,6 @@ on:
       - 'docs/**'
       - 'mkdocs.yml'
       - '.github/workflows/docs.yml'
-      - 'website/**'
   workflow_dispatch:
 
 permissions:
@@ -21,13 +20,5 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: pip install -r requirements-docs.txt ghp-import
-      # Build the MkDocs site, then graft the results dashboard in at /dashboard/
-      # (can't use `mkdocs gh-deploy` — it would publish before the graft).
-      - run: mkdocs build
-      - run: cp -r website site/dashboard
-      - name: Publish docs + dashboard to gh-pages
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          ghp-import --no-jekyll --push --force site
+      - run: pip install -r requirements-docs.txt
+      - run: mkdocs gh-deploy --force --clean
