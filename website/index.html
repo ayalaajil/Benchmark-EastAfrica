@@ -29,14 +29,15 @@
     </div>
   </header>
 
-  <nav class="tabs wrap" role="tablist" aria-label="Result categories">
-    <button class="tab" data-tab="overview" role="tab">Overview</button>
-    <button class="tab" data-tab="findings" role="tab">Key findings</button>
-    <button class="tab" data-tab="deterministic" role="tab">Deterministic</button>
-    <button class="tab" data-tab="probabilistic" role="tab">Probabilistic</button>
-    <button class="tab" data-tab="climatology" role="tab">Skill vs climatology</button>
-    <button class="tab" data-tab="tables" role="tab">Tables</button>
-    <button class="tab" data-tab="about" role="tab">About</button>
+  <nav class="tabs" role="tablist" aria-label="Result categories">
+    <div class="wrap tabs-row">
+      <button class="tab" data-tab="findings" role="tab">Key findings</button>
+      <button class="tab" data-tab="deterministic" role="tab">Deterministic</button>
+      <button class="tab" data-tab="probabilistic" role="tab">Probabilistic</button>
+      <button class="tab" data-tab="climatology" role="tab">Skill vs climatology</button>
+      <button class="tab" data-tab="tables" role="tab">Events &amp; data</button>
+      <button class="tab" data-tab="about" role="tab">About</button>
+    </div>
   </nav>
 
   <main class="wrap">
@@ -62,6 +63,13 @@
                 <td><b>0.43 → 0.44</b> (best, most stable)</td>
                 <td>≈ unbiased (−0.19)</td><td><b>0.54</b></td>
                 <td><b>Yes</b> — equatorial belt, holds to day 7</td>
+              </tr>
+              <tr>
+                <td>NeuralGCM</td><td>ensemble (hybrid physics–ML)</td>
+                <td>2.50 (fair CRPS; improves with lead, 2.16 at day 5)</td>
+                <td>0.34 → 0.33 (stable)</td>
+                <td>≈ unbiased (+0.08)</td><td>0.53</td>
+                <td>No — domain-mean CRPSS &lt; 0 at every lead</td>
               </tr>
               <tr>
                 <td>FourCastNet</td><td>deterministic</td><td>2.66 (MAE)</td>
@@ -90,59 +98,71 @@
           It has the lowest CRPS (~2.0 mm day⁻¹), the highest and most stable anomaly
           correlation, the best-calibrated exceedance probabilities, and is the
           <b>only model that beats climatology</b>, over the equatorial belt.
+          NeuralGCM — the other ensemble — comes closest, but its domain-mean CRPSS
+          stays negative at every lead (−0.26 at day 1, −0.13 at day 7), with only
+          scattered equatorial patches of positive skill.
         </p>
-        <img class="prose-fig" src="figures/crpss_maps_chirps.png" loading="lazy"
+        <img class="prose-fig" src="figures/web/crpss_maps_chirps.webp" loading="lazy"
+             decoding="async" width="1500" height="1627"
              alt="CRPS skill score maps vs climatology, all leads"
              data-title="CRPS skill score maps vs climatology, all leads">
         <p>
           Blue = beats the CHIRPS climatology baseline (CRPSS &gt; 0). GenCast holds a
-          blue equatorial band out to lead day 7; GraphCast and FourCastNet are mostly
-          red (worse than climatology). Full set: the <b>Skill vs climatology</b> tab.
+          blue equatorial band out to lead day 7; NeuralGCM shows patchier blue;
+          GraphCast and FourCastNet are mostly red (worse than climatology). Full set:
+          the <b>Skill vs climatology</b> tab.
         </p>
 
         <h2>2. All models have limited deterministic skill</h2>
         <p>
           Anomaly correlation stays <b>below the 0.6 "useful-skill" guide at every
-          lead</b>, and degrades with lead time for two of the three models — these are
-          genuinely hard, convection-dominated rains.
+          lead</b> for all four models, and degrades with lead time for the
+          deterministic ones — these are genuinely hard, convection-dominated rains.
         </p>
-        <img class="prose-fig" src="figures/acc_lead_curves.png" loading="lazy"
+        <img class="prose-fig" src="figures/web/acc_lead_curves.webp" loading="lazy"
+             decoding="async" width="1500" height="572"
              alt="Anomaly correlation vs lead day"
              data-title="Anomaly correlation vs lead day">
         <p>
           No model reaches the ACC = 0.6 guide at any lead. GenCast (≈0.36–0.41) is
-          highest and flattest; GraphCast degrades fastest, from ≈0.28 to ≈0.09 by
-          day 7. Full set: the <b>Deterministic</b> tab.
+          highest and flattest, with NeuralGCM close behind and similarly flat
+          (≈0.33–0.35); GraphCast degrades fastest, from ≈0.28 to ≈0.09 by day 7.
+          Full set: the <b>Deterministic</b> tab.
         </p>
 
         <h2>3. Distinct, stable bias signatures</h2>
         <p>
           <b>FourCastNet is systematically dry</b> (≈ −1.2 mm day⁻¹); <b>GraphCast
-          drifts wet</b> at longer leads (+0.84 mm day⁻¹ by day 7); <b>GenCast is
-          nearly unbiased</b> in the domain mean.
+          drifts wet</b> at longer leads (+0.84 mm day⁻¹ by day 7); <b>GenCast and
+          NeuralGCM are nearly unbiased</b> in the domain mean (−0.19 and +0.08
+          mm day⁻¹).
         </p>
-        <img class="prose-fig" src="figures/temporal_bias_mae.png" loading="lazy"
+        <img class="prose-fig" src="figures/web/temporal_bias_mae.webp" loading="lazy"
+             decoding="async" width="1500" height="763"
              alt="Rolling bias and MAE over the season"
              data-title="Rolling bias and MAE over the season">
         <p>
           Seven-day rolling bias (top) and MAE (bottom) vs valid date, one column per
-          lead day. The three models keep their sign and character throughout the
-          season. Full set: the <b>Deterministic</b> tab.
+          lead day. Each model keeps its sign and character throughout the season.
+          Full set: the <b>Deterministic</b> tab.
         </p>
 
-        <h2>4. GenCast is under-dispersive (overconfident)</h2>
+        <h2>4. Both ensembles are under-dispersive (overconfident)</h2>
         <p>
-          Spread–skill ratio rises from ~0.5 (day 1) toward ~0.8 (days 5–7) but never
-          reaches the calibrated SSR = 1 line, and rank histograms are U-shaped — the
-          ensemble is too narrow, especially at short lead.
+          GenCast's spread–skill ratio rises from ~0.5 (day 1) toward ~0.8
+          (days 5–7) but never reaches the calibrated SSR = 1 line; <b>NeuralGCM is
+          more severely under-dispersive still</b> (SSR ≈ 0.22 at day 1, only ~0.40
+          by day 7). Both ensembles' rank histograms are U-shaped — too narrow,
+          especially at short lead.
         </p>
-        <img class="prose-fig" src="figures/ssr_lead_curves_chirps.png" loading="lazy"
-             alt="GenCast spread-skill ratio vs lead"
-             data-title="GenCast spread–skill ratio vs lead">
+        <img class="prose-fig" src="figures/web/ssr_lead_curves_chirps.webp" loading="lazy"
+             decoding="async" width="1500" height="572"
+             alt="Ensemble spread-skill ratio vs lead"
+             data-title="Ensemble spread–skill ratio vs lead">
         <p>
-          Left: SSR vs lead, with the under-dispersive region (SSR &lt; 1) shaded.
-          Right: the two ingredients (RMSE, spread) plotted separately. Full set: the
-          <b>Probabilistic</b> tab.
+          Left: SSR vs lead for both ensembles, with the under-dispersive region
+          (SSR &lt; 1) shaded. Right: the two ingredients (RMSE, spread) plotted
+          separately. Full set: the <b>Probabilistic</b> tab.
         </p>
 
         <h2>5. Results are observation-sensitive</h2>
@@ -150,7 +170,8 @@
           Skill and calibration shift visibly across CHIRPS / ERA5 / TAMSAT,
           underscoring observational uncertainty over this data-sparse region.
         </p>
-        <img class="prose-fig" src="figures/rank_histograms_gencast.png" loading="lazy"
+        <img class="prose-fig" src="figures/web/rank_histograms_gencast.webp" loading="lazy"
+             decoding="async" width="1500" height="1090"
              alt="GenCast Talagrand rank histograms"
              data-title="GenCast Talagrand rank histograms">
         <p>
@@ -314,6 +335,7 @@ pytest tests/ -q</code></pre>
 
   <script src="manifest.js"></script>
   <script src="data/tables.js"></script>
+  <script src="data/figmeta.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

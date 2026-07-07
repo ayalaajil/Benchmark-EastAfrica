@@ -154,8 +154,9 @@ def main():
 
     # CRPS skill score vs climatology — maps (only if climatology was loaded)
     if "climatology" in preds:
-        plot_crpss_maps(preds, args.models, chirps_2d, INIT_DATES,
-                        LEAD_DAYS, args.output_dir, obs_label="chirps")
+        for obs_label, obs_2d in [("chirps", chirps_2d), ("tamsat", tamsat_2d)]:
+            plot_crpss_maps(preds, args.models, obs_2d, INIT_DATES,
+                            LEAD_DAYS, args.output_dir, obs_label=obs_label)
 
     plot_acc_curves(preds, args.models,
                     {"CHIRPS": chirps_2d, "TAMSAT": tamsat_2d},

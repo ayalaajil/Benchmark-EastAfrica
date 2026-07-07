@@ -8,8 +8,10 @@
   const FIGURES = window.MANIFEST.figures;
   const TABLES = window.MANIFEST.tables;
   const TABLE_DATA = window.TABLE_DATA || {};
+  const FIG_META = window.FIG_META || {};
 
-  const FIGURE_TABS = ["overview", "deterministic", "probabilistic", "climatology"];
+  const FIGURE_TABS = ["deterministic", "probabilistic", "climatology"];
+  const ALL_TABS = ["findings", ...FIGURE_TABS, "tables", "about"];
   const FILTER_META = {
     obs:   { label: "Reference" },
     lead:  { label: "Lead day" },
@@ -28,7 +30,7 @@
     lightboxCaption: document.getElementById("lightbox-caption"),
   };
 
-  const state = { tab: "overview", filters: {} };
+  const state = { tab: "findings", filters: {} };
 
   // ── Tabs ──────────────────────────────────────────────────────────────────
 
@@ -52,7 +54,17 @@
     }
   }
 
-  el.tabs.forEach(b => b.addEventListener("click", () => setTab(b.dataset.tab)));
+  // Tabs are routed through the URL hash so every view is linkable and the
+  // browser back button walks the tab history.
+  el.tabs.forEach(b => b.addEventListener("click", () => {
+    location.hash = b.dataset.tab;
+  }));
+
+  function applyHash() {
+    const tab = location.hash.replace(/^#/, "");
+    setTab(ALL_TABS.includes(tab) ? tab : "findings");
+  }
+  window.addEventListener("hashchange", applyHash);
 
   // ── Filter bar ────────────────────────────────────────────────────────────
 
@@ -167,9 +179,12 @@
       card.appendChild(caption);
 
       const img = document.createElement("img");
-      img.src = `figures/${fig.id}.png`;
+      img.src = `figures/web/${fig.id}.webp`;
       img.alt = fig.title;
       img.loading = "lazy";
+      img.decoding = "async";
+      const dims = FIG_META[fig.id];
+      if (dims) { img.width = dims[0]; img.height = dims[1]; }
       img.addEventListener("click", () => openLightbox(fig));
       card.appendChild(img);
 
@@ -180,7 +195,7 @@
   // ── Lightbox ──────────────────────────────────────────────────────────────
 
   function openLightbox(fig) {
-    el.lightboxImg.src = `figures/${fig.id}.png`;
+    el.lightboxImg.src = `figures/web/${fig.id}.webp`;
     el.lightboxImg.alt = fig.title;
     el.lightboxCaption.textContent = `${fig.title} — ${fig.caption}`;
     el.lightbox.hidden = false;
@@ -339,5 +354,5 @@
   });
 
   renderTables();
-  setTab("overview");
+  applyHash();
 })();

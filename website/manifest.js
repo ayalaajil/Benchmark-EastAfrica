@@ -1,11 +1,11 @@
-// Figure and table catalog — the single source of truth for what the site shows.
+// Figure and table catalog, the single source of truth for what the site shows.
 // Kept as `window.MANIFEST = <pure JSON>;` so sync_outputs.py can parse and
 // validate it against the files actually copied from mam2024_analysis_outputs/.
 window.MANIFEST = {
   "figures": [
     {
       "id": "timeseries",
-      "tab": "overview",
+      "tab": "deterministic",
       "title": "Area-mean daily precipitation",
       "caption": "Land-only domain mean, one panel per lead day; four AI models against CHIRPS, ERA5 and TAMSAT.",
       "tags": {}
@@ -27,56 +27,56 @@ window.MANIFEST = {
     {
       "id": "spatial_maps_chirps_ld1",
       "tab": "deterministic",
-      "title": "Spatial bias & RMSE vs CHIRPS — lead day 1",
+      "title": "Spatial bias & RMSE vs CHIRPS, lead day 1",
       "caption": "Per-cell bias (top) and RMSE (bottom) by model; ocean masked (Natural Earth land mask).",
       "tags": { "obs": "CHIRPS", "lead": "1" }
     },
     {
       "id": "spatial_maps_chirps_ld3",
       "tab": "deterministic",
-      "title": "Spatial bias & RMSE vs CHIRPS — lead day 3",
+      "title": "Spatial bias & RMSE vs CHIRPS, lead day 3",
       "caption": "Per-cell bias (top) and RMSE (bottom) by model; ocean masked (Natural Earth land mask).",
       "tags": { "obs": "CHIRPS", "lead": "3" }
     },
     {
       "id": "spatial_maps_chirps_ld5",
       "tab": "deterministic",
-      "title": "Spatial bias & RMSE vs CHIRPS — lead day 5",
+      "title": "Spatial bias & RMSE vs CHIRPS, lead day 5",
       "caption": "Per-cell bias (top) and RMSE (bottom) by model; ocean masked (Natural Earth land mask).",
       "tags": { "obs": "CHIRPS", "lead": "5" }
     },
     {
       "id": "spatial_maps_chirps_ld7",
       "tab": "deterministic",
-      "title": "Spatial bias & RMSE vs CHIRPS — lead day 7",
+      "title": "Spatial bias & RMSE vs CHIRPS, lead day 7",
       "caption": "Per-cell bias (top) and RMSE (bottom) by model; ocean masked (Natural Earth land mask).",
       "tags": { "obs": "CHIRPS", "lead": "7" }
     },
     {
       "id": "spatial_maps_era5_ld1",
       "tab": "deterministic",
-      "title": "Spatial bias & RMSE vs ERA5 — lead day 1",
+      "title": "Spatial bias & RMSE vs ERA5, lead day 1",
       "caption": "Per-cell bias (top) and RMSE (bottom) by model; ocean masked (Natural Earth land mask).",
       "tags": { "obs": "ERA5", "lead": "1" }
     },
     {
       "id": "spatial_maps_era5_ld3",
       "tab": "deterministic",
-      "title": "Spatial bias & RMSE vs ERA5 — lead day 3",
+      "title": "Spatial bias & RMSE vs ERA5, lead day 3",
       "caption": "Per-cell bias (top) and RMSE (bottom) by model; ocean masked (Natural Earth land mask).",
       "tags": { "obs": "ERA5", "lead": "3" }
     },
     {
       "id": "spatial_maps_era5_ld5",
       "tab": "deterministic",
-      "title": "Spatial bias & RMSE vs ERA5 — lead day 5",
+      "title": "Spatial bias & RMSE vs ERA5, lead day 5",
       "caption": "Per-cell bias (top) and RMSE (bottom) by model; ocean masked (Natural Earth land mask).",
       "tags": { "obs": "ERA5", "lead": "5" }
     },
     {
       "id": "spatial_maps_era5_ld7",
       "tab": "deterministic",
-      "title": "Spatial bias & RMSE vs ERA5 — lead day 7",
+      "title": "Spatial bias & RMSE vs ERA5, lead day 7",
       "caption": "Per-cell bias (top) and RMSE (bottom) by model; ocean masked (Natural Earth land mask).",
       "tags": { "obs": "ERA5", "lead": "7" }
     },
@@ -162,40 +162,22 @@ window.MANIFEST = {
     {
       "id": "crpss_maps_chirps",
       "tab": "climatology",
-      "title": "CRPS skill score vs climatology",
-      "caption": "Per-cell CRPSS against the 21-member out-of-sample CHIRPS climatology; blue beats climatology, black contour = 0, gray = hyper-arid (masked). Rows = models, columns = lead days.",
-      "tags": {}
+      "title": "CRPS skill score vs climatology, scored against CHIRPS",
+      "caption": "Per-cell CRPSS relative to the 21-member out-of-sample climatology, model and baseline both scored against CHIRPS; blue beats climatology, black contour = 0, gray = hyper-arid (masked). Rows = models, columns = lead days.",
+      "tags": { "obs": "CHIRPS" }
+    },
+    {
+      "id": "crpss_maps_tamsat",
+      "tab": "climatology",
+      "title": "CRPS skill score vs climatology, scored against TAMSAT",
+      "caption": "Per-cell CRPSS relative to the 21-member out-of-sample climatology, model and baseline both scored against TAMSAT; blue beats climatology, black contour = 0, gray = hyper-arid (masked). Rows = models, columns = lead days.",
+      "tags": { "obs": "TAMSAT" }
     }
   ],
   "tables": [
     {
-      "id": "summary_bias_table",
-      "title": "Summary bias / MAE / RMSE (lead day 1)",
-      "render": true
-    },
-    {
-      "id": "acc_by_model_truth_lead",
-      "title": "Anomaly correlation by model × truth × lead",
-      "render": true
-    },
-    {
-      "id": "ssr_by_model_truth_lead",
-      "title": "Spread-skill summary (Fortin spread, RMSE, SSR)",
-      "render": true
-    },
-    {
-      "id": "crpss_vs_climatology_by_model_obs_lead",
-      "title": "CRPS skill score vs climatology",
-      "render": true
-    },
-    {
-      "id": "probabilistic_scores",
-      "title": "Ensemble CRPS, spread and SSR",
-      "render": true
-    },
-    {
-      "id": "interval_coverage",
-      "title": "Prediction-interval coverage (50 / 80 / 90%)",
+      "id": "event_scores_by_threshold",
+      "title": "Event scores (POD / FAR / CSI / frequency bias)",
       "render": true
     },
     {
@@ -204,14 +186,39 @@ window.MANIFEST = {
       "render": true
     },
     {
-      "id": "deterministic_skill_by_model_obs_lead",
-      "title": "Deterministic skill by model × reference × lead",
+      "id": "interval_coverage",
+      "title": "Prediction-interval coverage (50 / 80 / 90%)",
       "render": true
     },
     {
-      "id": "event_scores_by_threshold",
-      "title": "Event scores (POD / FAR / CSI / frequency bias)",
-      "render": true
+      "id": "summary_bias_table",
+      "title": "Summary bias / MAE / RMSE (lead day 1)",
+      "render": false
+    },
+    {
+      "id": "acc_by_model_truth_lead",
+      "title": "Anomaly correlation by model × truth × lead",
+      "render": false
+    },
+    {
+      "id": "ssr_by_model_truth_lead",
+      "title": "Spread-skill summary (Fortin spread, RMSE, SSR)",
+      "render": false
+    },
+    {
+      "id": "crpss_vs_climatology_by_model_obs_lead",
+      "title": "CRPS skill score vs climatology",
+      "render": false
+    },
+    {
+      "id": "probabilistic_scores",
+      "title": "Ensemble CRPS, spread and SSR",
+      "render": false
+    },
+    {
+      "id": "deterministic_skill_by_model_obs_lead",
+      "title": "Deterministic skill by model × reference × lead",
+      "render": false
     },
     {
       "id": "reliability_tables",
