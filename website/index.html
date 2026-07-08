@@ -13,7 +13,7 @@
       <div class="masthead">
         <div>
           <h1>East Africa AI Weather Benchmark</h1>
-          <p class="subtitle">Daily rainfall verification of AI forecast systems — MAM 2024 long rains</p>
+          <p class="subtitle">Daily rainfall verification of AI forecast systems during the MAM 2024 long-rains season</p>
         </div>
         <nav class="ext-links">
           <a href="https://github.com/ayalaajil/Benchmark-EastAfrica" target="_blank" rel="noopener">Repository</a>
@@ -61,7 +61,7 @@
               <tr>
                 <td><b>GenCast</b></td><td>ensemble (diffusion)</td>
                 <td><b>2.25</b> (fair CRPS; flattest with lead)</td>
-                <td><b>0.43 → 0.44</b> (best, most stable)</td>
+                <td><b>0.37 → 0.36</b> (best, most stable)</td>
                 <td>≈ unbiased (−0.19)</td><td><b>0.54</b></td>
                 <td><b>Yes</b> — equatorial belt, holds to day 7</td>
               </tr>
@@ -74,12 +74,12 @@
               </tr>
               <tr>
                 <td>FourCastNet</td><td>deterministic</td><td>2.66 (MAE)</td>
-                <td>0.41 → 0.34</td><td>Dry (−1.18)</td><td>0.49</td>
+                <td>0.32 → 0.25</td><td>Dry (−1.18)</td><td>0.49</td>
                 <td>Mixed — negative over northern Horn</td>
               </tr>
               <tr>
                 <td>GraphCast</td><td>deterministic</td><td>3.15 (MAE)</td>
-                <td>0.36 → 0.19 (fastest decay)</td>
+                <td>0.28 → 0.06 (fastest decay)</td>
                 <td>Wet drift (−0.14 → +0.84)</td><td>0.51</td>
                 <td>No — mostly worse, worsens with lead</td>
               </tr>
@@ -90,96 +90,102 @@
             </tbody>
           </table>
         </div>
-        <p><b>Verdict:</b> GenCast is the strongest system on every axis, but its
-          ensemble is overconfident (finding 4 below), and no model reliably beats
+        <p><b>Verdict:</b> GenCast is the strongest system across the benchmark, but
+          its ensemble remains overconfident. No model consistently outperforms
           climatology outside the equatorial belt.</p>
 
         <h2>1. GenCast is the strongest overall</h2>
         <p>
-          It has the lowest CRPS (~2.0 mm day⁻¹), the highest and most stable anomaly
-          correlation, the best-calibrated exceedance probabilities, and is the
-          <b>only model that beats climatology</b>, over the equatorial belt.
-          NeuralGCM — the other ensemble — comes closest, but its domain-mean CRPSS
-          stays negative at every lead (−0.26 at day 1, −0.13 at day 7), with only
-          scattered equatorial patches of positive skill.
+          GenCast has the lowest CRPS, the highest and most stable anomaly
+          correlation, and the best-calibrated exceedance probabilities. It is also
+          the <b>only model to consistently beat climatology</b>, mainly over the
+          equatorial belt. NeuralGCM, the other ensemble system, comes closest, but
+          its domain-mean CRPSS remains negative at every lead, with only scattered
+          areas of positive skill near the equator.
         </p>
         <img class="prose-fig" src="figures/web/crpss_maps_chirps.webp" loading="lazy"
              decoding="async" width="1500" height="1627"
              alt="CRPS skill score maps vs climatology, all leads"
              data-title="CRPS skill score maps vs climatology, all leads">
         <p>
-          Blue = beats the CHIRPS climatology baseline (CRPSS &gt; 0). GenCast holds a
-          blue equatorial band out to lead day 7; NeuralGCM shows patchier blue;
-          GraphCast and FourCastNet are mostly red (worse than climatology). Full set:
-          the <b>Skill vs climatology</b> tab.
+          Blue areas indicate positive CRPSS, meaning the model beats the CHIRPS
+          climatology baseline. GenCast maintains a coherent equatorial band of
+          positive skill through lead day 7. NeuralGCM shows more fragmented positive
+          skill, while GraphCast and FourCastNet are mostly worse than climatology.
+          See the full set in the <b>Skill vs climatology</b> tab.
         </p>
 
         <h2>2. All models have limited deterministic skill</h2>
         <p>
-          Anomaly correlation stays <b>below the 0.6 "useful-skill" guide at every
-          lead</b> for all four models, and degrades with lead time for the
-          deterministic ones — these are genuinely hard, convection-dominated rains.
+          For all four models, anomaly correlation <b>remains below the 0.6
+          "useful skill" guide at every lead</b>. Skill also declines with lead time
+          for the deterministic models, highlighting the difficulty of forecasting
+          convection-dominated rainfall during the long-rains season.
         </p>
         <img class="prose-fig" src="figures/web/acc_lead_curves.webp" loading="lazy"
              decoding="async" width="1500" height="572"
              alt="Anomaly correlation vs lead day"
              data-title="Anomaly correlation vs lead day">
         <p>
-          No model reaches the ACC = 0.6 guide at any lead. GenCast (≈0.36–0.41) is
-          highest and flattest, with NeuralGCM close behind and similarly flat
-          (≈0.33–0.35); GraphCast degrades fastest, from ≈0.28 to ≈0.09 by day 7.
-          Full set: the <b>Deterministic</b> tab.
+          No model reaches the ACC = 0.6 reference line at any lead. GenCast has the
+          highest and most stable ACC curve, with NeuralGCM close behind. GraphCast
+          shows the sharpest degradation, falling substantially by lead day 7. See
+          the full set in the <b>Deterministic</b> tab.
         </p>
 
         <h2>3. Distinct, stable bias signatures</h2>
         <p>
-          <b>FourCastNet is systematically dry</b> (≈ −1.2 mm day⁻¹); <b>GraphCast
-          drifts wet</b> at longer leads (+0.84 mm day⁻¹ by day 7); <b>GenCast and
-          NeuralGCM are nearly unbiased</b> in the domain mean (−0.19 and +0.08
-          mm day⁻¹).
+          The models show clear and stable bias signatures. <b>FourCastNet is
+          systematically dry</b> at about −1.2 mm day⁻¹, while <b>GraphCast develops
+          a wet bias</b> at longer leads, reaching +0.84 mm day⁻¹ by day 7.
+          <b>GenCast and NeuralGCM remain nearly unbiased</b> in the domain mean.
         </p>
         <img class="prose-fig" src="figures/web/temporal_bias_mae.webp" loading="lazy"
              decoding="async" width="1500" height="763"
              alt="Rolling bias and MAE over the season"
              data-title="Rolling bias and MAE over the season">
         <p>
-          Seven-day rolling bias (top) and MAE (bottom) vs valid date, one column per
-          lead day. Each model keeps its sign and character throughout the season.
-          Full set: the <b>Deterministic</b> tab.
+          The figure shows seven-day rolling bias in the top row and MAE in the
+          bottom row, plotted against valid date with one column per lead day. Each
+          model retains a consistent bias signature throughout the season. See the
+          full set in the <b>Deterministic</b> tab.
         </p>
 
         <h2>4. Both ensembles are under-dispersive (overconfident)</h2>
         <p>
-          GenCast's spread–skill ratio rises from ~0.5 (day 1) toward ~0.8
-          (days 5–7) but never reaches the calibrated SSR = 1 line; <b>NeuralGCM is
-          more severely under-dispersive still</b> (SSR ≈ 0.22 at day 1, only ~0.40
-          by day 7). Both ensembles' rank histograms are U-shaped — too narrow,
-          especially at short lead.
+          GenCast's spread–skill ratio increases from about 0.5 on day 1 to about
+          0.8 by days 5–7, but it never reaches the calibrated SSR = 1 line.
+          <b>NeuralGCM is even more under-dispersive</b>, rising from roughly 0.22
+          on day 1 to only about 0.40 by day 7. The U-shaped rank histograms confirm
+          that both ensembles are too narrow, especially at short lead times.
         </p>
         <img class="prose-fig" src="figures/web/ssr_lead_curves_chirps.webp" loading="lazy"
              decoding="async" width="1500" height="572"
              alt="Ensemble spread-skill ratio vs lead"
              data-title="Ensemble spread–skill ratio vs lead">
         <p>
-          Left: SSR vs lead for both ensembles, with the under-dispersive region
-          (SSR &lt; 1) shaded. Right: the two ingredients (RMSE, spread) plotted
-          separately. Full set: the <b>Probabilistic</b> tab.
+          The left panel shows SSR versus lead time for both ensembles, with the
+          under-dispersive region marked below SSR = 1. The right panel separates
+          the two components of SSR: ensemble-mean RMSE and ensemble spread. See the
+          full set in the <b>Probabilistic</b> tab.
         </p>
 
         <h2>5. Results are observation-sensitive</h2>
         <p>
-          Skill and calibration shift visibly across CHIRPS / ERA5 / TAMSAT,
-          underscoring observational uncertainty over this data-sparse region.
+          Skill and calibration vary noticeably across CHIRPS, ERA5, and TAMSAT,
+          underscoring the role of observational uncertainty in this data-sparse
+          region.
         </p>
         <img class="prose-fig" src="figures/web/rank_histograms_gencast.webp" loading="lazy"
              decoding="async" width="1500" height="1090"
              alt="GenCast Talagrand rank histograms"
              data-title="GenCast Talagrand rank histograms">
         <p>
-          Against CHIRPS and TAMSAT the rank histograms are sharply U-shaped (rank 0 ≈
-          0.47–0.55); against ERA5 they are far flatter (rank 0 ≈ 0.19) — GenCast looks
-          much better calibrated against the reanalysis it was partly trained near than
-          against the independent gauge–satellite products. Full set: the
+          Against CHIRPS and TAMSAT, GenCast's rank histograms are sharply U-shaped,
+          indicating strong under-dispersion. Against ERA5, the histograms are much
+          flatter, suggesting better apparent calibration. This contrast indicates
+          that GenCast performs more favorably against the reanalysis reference than
+          against the independent gauge–satellite products. See the full set in the
           <b>Probabilistic</b> tab.
         </p>
       </article>
@@ -191,20 +197,22 @@
       <article class="prose">
         <h2>What this is</h2>
         <p>
-          A self-contained, reproducible benchmark of machine-learning weather models on
-          <b>daily total rainfall over East Africa</b> (12°S–15°N, 28°E–52°E, 1° grid,
-          land cells only). Every figure and table on this site is produced by one
-          command, <code>run_verification.py</code>, from publicly available inputs.
+          This site presents a self-contained, reproducible benchmark of
+          machine-learning weather models for <b>daily total rainfall over East
+          Africa</b>. The domain covers 12°S–15°N and 28°E–52°E on a 1° land-masked
+          grid. Every figure and table is generated from publicly available inputs
+          using a single verification command, <code>run_verification.py</code>.
         </p>
 
         <h2>Protocol — MAM 2024</h2>
         <p>
-          Each model is initialized daily at 00&nbsp;UTC from ERA5 analyses over the
-          March–May 2024 long-rains season (<b>92 initializations</b>, 1&nbsp;Mar –
-          31&nbsp;May) and verified at lead days <b>1, 3, 5 and 7</b>: a forecast started
-          on day <i>t</i> is scored against observations valid on <i>t</i>+ℓ. Daily totals
-          are formed on each model's native cadence, then conservatively regridded to the
-          common 1° grid (mm&nbsp;day⁻¹).
+          Each model is initialized daily at 00&nbsp;UTC from ERA5 analyses during the
+          March–May 2024 long-rains season, giving <b>92 initializations</b> from
+          1&nbsp;Mar to 31&nbsp;May. Forecasts are verified at lead days
+          <b>1, 3, 5, and 7</b>: a forecast initialized on day <i>t</i> is scored
+          against observations valid on <i>t</i>+ℓ. Daily totals are first computed
+          at each model's native cadence, then conservatively regridded to the
+          common 1° grid in mm&nbsp;day⁻¹.
         </p>
 
         <h2>Models</h2>
@@ -221,30 +229,33 @@
 
         <h2>References</h2>
         <p>
-          Every model is verified against three independent rainfall products —
-          <b>CHIRPS v2.0</b> (primary, gauge–satellite), <b>ERA5</b> (reanalysis) and
-          <b>TAMSAT v3.1</b> (satellite) — so conclusions are not artifacts of a single
-          observational product.
+          Each model is verified against three independent rainfall products:
+          <b>CHIRPS v2.0</b>, the primary gauge–satellite reference; <b>ERA5</b>, a
+          reanalysis product; and <b>TAMSAT v3.1</b>, a satellite-based estimate.
+          This design reduces the risk that conclusions reflect artifacts of a
+          single observational dataset.
         </p>
 
         <h2>Data &amp; downloads</h2>
         <p>
-          Every figure on this site is written twice by the pipeline — a 300-dpi PNG
-          (shown here) and a vector PDF (the <b>⬇ PDF</b> button on each card, for
-          papers). Every table on the <b>Tables</b> tab has a <b>⬇ CSV</b> download.
-          The full numeric results are written by <code>run_verification.py</code> to
-          <code>mam2024_analysis_outputs/</code>; they are not committed to the
-          repository (they are regenerated from the prediction Zarr stores), but every
-          one is reproducible with the single command below.
+          The pipeline writes every figure in two formats: a 300-dpi PNG for display
+          on this site and a vector PDF for publication-quality use, available
+          through the <b>⬇ PDF</b> button on each figure card. Tables in the
+          <b>Data &amp; downloads</b> tab can be downloaded as <b>⬇ CSV</b> files.
+          Full numeric results are written by <code>run_verification.py</code> to
+          <code>mam2024_analysis_outputs/</code>. These outputs are not committed to
+          the repository because they can be regenerated from the prediction Zarr
+          stores using the commands below.
         </p>
 
         <h2>Reproducibility</h2>
         <p>
-          Everything is regenerated by two commands — inference, then verification.
-          All inputs are public: model checkpoints and ERA5 initial conditions are
-          read from anonymous Google Cloud Storage, and CHIRPS/ERA5/TAMSAT are
-          downloaded and cached on first use. Inference needs a GPU and the conda
-          environments under <code>envs/</code>.
+          The full benchmark can be regenerated in two stages: inference, followed
+          by verification. All inputs are public. Model checkpoints and ERA5 initial
+          conditions are read from anonymous Google Cloud Storage, while CHIRPS,
+          ERA5, and TAMSAT are downloaded and cached on first use. Inference
+          requires a GPU and the conda environments provided under
+          <code>envs/</code>.
         </p>
         <pre><code># 1. Inference — GenCast / GraphCast / FourCastNet / climatology, MAM 2024
 ./run_inference.sh --models gencast graphcast fourcastnet climatology \
@@ -261,10 +272,11 @@ python run_verification.py --pred-dir data/predictions \
 # 3. Tests
 pytest tests/ -q</code></pre>
         <p>
-          Complete prediction files are skipped on rerun, so inference is resumable;
-          pass <code>--overwrite</code> to force regeneration. If
+          Completed prediction files are skipped on rerun, making inference
+          resumable. Use <code>--overwrite</code> to force regeneration. If
           <code>data/predictions/climatology/</code> exists, the climatology baseline
-          is loaded automatically and the CRPS skill score (table + maps) is produced.
+          is loaded automatically and the CRPS skill score table and maps are
+          produced.
         </p>
 
         <h2>Glossary</h2>
@@ -313,8 +325,9 @@ pytest tests/ -q</code></pre>
         </table>
 
         <p class="footnote-link">
-          Source code, environment files and full pipeline:
-          <a href="https://github.com/ayalaajil/Benchmark-EastAfrica" target="_blank" rel="noopener">github.com/ayalaajil/Benchmark-EastAfrica</a>.
+          Source code, environment files, and the full benchmark pipeline are
+          available in the
+          <a href="https://github.com/ayalaajil/Benchmark-EastAfrica" target="_blank" rel="noopener">project repository</a>.
         </p>
       </article>
     </section>
