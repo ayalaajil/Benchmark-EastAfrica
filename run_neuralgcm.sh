@@ -46,7 +46,9 @@ ${LD_LIBRARY_PATH:-}
 export CUDA_VISIBLE_DEVICES="${GPU}"
 export PYTHONWARNINGS="ignore::FutureWarning"
 
-mkdir -p logs/2024
+LOGDIR="logs/2024"
+LOG="${LOGDIR}/neuralgcm.log"
+mkdir -p "${LOGDIR}"
 
 echo "$(date '+%F %T')  NeuralGCM inference"
 echo "  env       : ${ENV}"
@@ -55,6 +57,9 @@ echo "  dates     : ${START} → ${END}"
 echo "  members   : ${N_MEMBERS}"
 echo "  save vars : ${SAVE_VARIABLES} (extra-var members: ${EXTRA_VAR_MEMBERS})"
 echo "  output    : ${OUTPUT_DIR}/neuralgcm/"
+echo "  log       : ${LOG}"
+echo ""
+echo "Monitor progress:  tail -f ${LOG}"
 echo ""
 
 exec "${PYTHON}" -m benchmark_ea.run \
@@ -65,4 +70,5 @@ exec "${PYTHON}" -m benchmark_ea.run \
     --n-members "${N_MEMBERS}" \
     --save-variables "${SAVE_VARIABLES}" \
     --extra-var-members "${EXTRA_VAR_MEMBERS}" \
-    --output-dir "${OUTPUT_DIR}"
+    --output-dir "${OUTPUT_DIR}" \
+    > "${LOG}" 2>&1
