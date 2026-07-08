@@ -1,18 +1,9 @@
 """
 GenCast ensemble adapter.
 
-All inference code lives here — no dependency on AIM-for-Scale or weather_gencast.
-
-Checkpoint : gs://dm_graphcast/gencast/params/  (public, anonymous GCS)
-             Auto-selects the Mini checkpoint when params_file is None.
 ERA5 init  : ARCO-ERA5 public zarr on GCS (anonymous)
 
-Install requirements
---------------------
-    pip install "graphcast @ git+https://github.com/google-deepmind/graphcast"
-    pip install dm-haiku "jax[cuda12_pip]" gcsfs google-cloud-storage
-
-Inference flow
+Inference
 --------------
 1. Load GenCast Mini checkpoint + norm stats + static fields from GCS.
 2. Build haiku-transformed, JIT-compiled forward function.

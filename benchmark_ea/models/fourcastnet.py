@@ -10,11 +10,6 @@ takes 20 of FCNv2's output channels as input and returns 6h-accumulated tp (m).
 
     FCNv2 IC ─► [FCNv2 73-ch state] ─► [PrecipAFNO] ─► tp  (per 6h step)
 
-Installation
-------------
-The `aim-graphcast` conda environment already contains all required libraries
-(earth2mip 0.2, torch 2.6+cu124, modulus 0.9).  No separate environment needed.
-
 Weights (downloaded once on first use, no API key required):
     from earth2mip import registry
     from earth2mip.diagnostic.precipitation_afno import PrecipitationAFNO
