@@ -199,7 +199,16 @@ def _run_member(model, era5_on_grid, date, max_lead, rng_key, jax):
         start_with_input=False,
     )
     times = pd.date_range(date + pd.Timedelta(days=1), date + pd.Timedelta(days=max_lead), freq="D")
-    return model.data_to_xarray(predictions, times=times)
+    ds = model.data_to_xarray(predictions, times=times)
+    # Rebuild as a plain numpy-backed Dataset; np.asarray triggers jax.device_get
+    # so the GPU buffer can be freed. Without this, zarr's v2 write codec (which
+    # calls `.astype(..., order=...)`, unsupported by jax.Array) crashes — same
+    # fix as gencast.py's save_all path.
+    return xr.Dataset(
+        {v: (ds[v].dims, np.asarray(ds[v].data), ds[v].attrs) for v in ds.data_vars},
+        coords={c: np.asarray(ds[c].data) for c in ds.coords},
+        attrs=ds.attrs,
+    )
 
 
 # ── Canonical conversion (precip → EA 1° grid, mm/day) ─────────────────────────
