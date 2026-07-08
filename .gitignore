@@ -1,5 +1,4 @@
-# Data caches and model outputs (large, regeneratable; anchored to repo root
-# so website/data/ stays trackable)
+# Data caches and model outputs (large predictions)
 /data/
 /logs/
 
@@ -14,9 +13,3 @@ __pycache__/
 
 # Jupyter
 .ipynb_checkpoints/
-
-# MkDocs build output (docs/ source and docs/assets are tracked)
-site/
-
-# OS / editor cruft
-.DS_Store

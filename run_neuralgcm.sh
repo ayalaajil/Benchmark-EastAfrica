@@ -6,7 +6,7 @@ cd "$(dirname "$0")"
 
 # ── Config ────────────────────────────────────────────────────────────────────
 ENV="${ENV:-/home/ubuntu/miniconda3/envs/neuralgcm}"   # dedicated NeuralGCM env
-GPU="${GPU:-1}"                          
+GPU="${GPU:-3}"                          
 START="${START:-2024-01-01}"
 END="${END:-2024-12-24}"
 LEAD_DAYS="${LEAD_DAYS:-1 3 5 7}"
@@ -24,10 +24,6 @@ if [[ ! -x "${PYTHON}" ]]; then
     echo "Create it first:" >&2
     echo "  conda create -n neuralgcm python=3.11 -y" >&2
     echo "  conda run -n neuralgcm pip install neuralgcm \"jax[cuda12]\" gcsfs xarray zarr xesmf" >&2
-    exit 1
-fi
-if [[ "${GPU}" == "0" ]]; then
-    echo "ERROR: GPU 0 is used by GenCast. Pick a free GPU (e.g. GPU=1)." >&2
     exit 1
 fi
 
@@ -54,7 +50,7 @@ mkdir -p logs/2024
 
 echo "$(date '+%F %T')  NeuralGCM inference"
 echo "  env       : ${ENV}"
-echo "  GPU       : ${GPU}   (GenCast is on GPU 0)"
+echo "  GPU       : ${GPU} "
 echo "  dates     : ${START} → ${END}"
 echo "  members   : ${N_MEMBERS}"
 echo "  save vars : ${SAVE_VARIABLES} (extra-var members: ${EXTRA_VAR_MEMBERS})"

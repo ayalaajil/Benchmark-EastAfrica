@@ -10,7 +10,7 @@
   const TABLE_DATA = window.TABLE_DATA || {};
   const FIG_META = window.FIG_META || {};
 
-  const FIGURE_TABS = ["deterministic", "probabilistic", "climatology"];
+  const FIGURE_TABS = ["deterministic", "probabilistic", "climatology", "events"];
   const ALL_TABS = ["findings", ...FIGURE_TABS, "tables", "about"];
   const FILTER_META = {
     obs:   { label: "Reference" },

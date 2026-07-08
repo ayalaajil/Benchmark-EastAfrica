@@ -49,8 +49,11 @@ data/figmeta.js   display-image pixel sizes          (generated, committed)
 ```
 
 Generated outputs are committed so the site is deployable as-is. Only tables
-with no figure equivalent are rendered (event scores, Brier, interval
-coverage — `render: true` in `manifest.js`); the rest are download-only CSVs.
+with no figure equivalent are rendered (currently just interval coverage —
+`render: true` in `manifest.js`); the rest are download-only CSVs. The event
+scores and Brier tables are shown as figures on the Events tab instead
+(performance diagrams and Brier-skill-score curves from
+`benchmark_ea/verification/event_plots.py`).
 
 ## Deployment
 

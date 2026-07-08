@@ -172,18 +172,60 @@ window.MANIFEST = {
       "title": "CRPS skill score vs climatology, scored against TAMSAT",
       "caption": "Per-cell CRPSS relative to the 21-member out-of-sample climatology, model and baseline both scored against TAMSAT; blue beats climatology, black contour = 0, gray = hyper-arid (masked). Rows = models, columns = lead days.",
       "tags": { "obs": "TAMSAT" }
+    },
+    {
+      "id": "event_skill_curves_chirps",
+      "tab": "events",
+      "title": "Event detection skill vs threshold, scored against CHIRPS",
+      "caption": "CSI (top), higher is better: of all occasions where rain above the threshold was forecast or observed, the share the model got right (1 = perfect; correct quiet days earn no credit, so rare heavy-rain events score low for every model). Frequency bias (bottom) is alarm-count calibration, not accuracy: events forecast ÷ events observed — the dashed FB = 1 line is ideal, above 1 = over-alerting (crying wolf), below 1 = under-alerting. One column per lead day, from the (ensemble-mean) daily field, scored against CHIRPS; exact numbers in event_scores_by_threshold.csv.",
+      "tags": { "obs": "CHIRPS" }
+    },
+    {
+      "id": "event_skill_curves_era5",
+      "tab": "events",
+      "title": "Event detection skill vs threshold, scored against ERA5",
+      "caption": "CSI (top), higher is better: of all occasions where rain above the threshold was forecast or observed, the share the model got right (1 = perfect; correct quiet days earn no credit, so rare heavy-rain events score low for every model). Frequency bias (bottom) is alarm-count calibration, not accuracy: events forecast ÷ events observed — the dashed FB = 1 line is ideal, above 1 = over-alerting (crying wolf), below 1 = under-alerting. One column per lead day, from the (ensemble-mean) daily field, scored against ERA5.",
+      "tags": { "obs": "ERA5" }
+    },
+    {
+      "id": "event_pod_far_chirps",
+      "tab": "events",
+      "title": "Event detection vs false alarms (POD / FAR), scored against CHIRPS",
+      "caption": "POD (top), higher is better: the share of observed events the model caught (1 = perfect). FAR (bottom), lower is better: the share of the model's alarms that did not verify (0 = perfect). Read the rows together — they are a trade-off: a model can buy a higher POD by alerting more often, at the price of a higher FAR (compare with the frequency-bias row above). One column per lead day, from the (ensemble-mean) daily field, scored against CHIRPS; exact numbers in event_scores_by_threshold.csv.",
+      "tags": { "obs": "CHIRPS" }
+    },
+    {
+      "id": "event_pod_far_era5",
+      "tab": "events",
+      "title": "Event detection vs false alarms (POD / FAR), scored against ERA5",
+      "caption": "POD (top), higher is better: the share of observed events the model caught (1 = perfect). FAR (bottom), lower is better: the share of the model's alarms that did not verify (0 = perfect). Read the rows together — they are a trade-off: a model can buy a higher POD by alerting more often, at the price of a higher FAR (compare with the frequency-bias row above). One column per lead day, from the (ensemble-mean) daily field, scored against ERA5.",
+      "tags": { "obs": "ERA5" }
+    },
+    {
+      "id": "brier_curves_chirps",
+      "tab": "events",
+      "title": "Brier score by threshold, scored against CHIRPS",
+      "caption": "Raw Brier score of the ensemble exceedance probabilities, lower is better; ensemble models only, since deterministic models issue no probabilities. The dashed curve is the climatological base-rate Brier p(1 − p) — the score of always forecasting the observed event frequency — so below it the ensemble adds real information. Brier scores shrink for rarer events by construction: compare models against the dashed reference, not across thresholds. One column per lead day, scored against CHIRPS; exact numbers in brier_scores.csv.",
+      "tags": { "obs": "CHIRPS" }
+    },
+    {
+      "id": "brier_curves_era5",
+      "tab": "events",
+      "title": "Brier score by threshold, scored against ERA5",
+      "caption": "Raw Brier score of the ensemble exceedance probabilities, lower is better; ensemble models only, since deterministic models issue no probabilities. The dashed curve is the climatological base-rate Brier p(1 − p) — the score of always forecasting the observed event frequency — so below it the ensemble adds real information. Brier scores shrink for rarer events by construction: compare models against the dashed reference, not across thresholds. One column per lead day, scored against ERA5.",
+      "tags": { "obs": "ERA5" }
     }
   ],
   "tables": [
     {
       "id": "event_scores_by_threshold",
       "title": "Event scores (POD / FAR / CSI / frequency bias)",
-      "render": true
+      "render": false
     },
     {
       "id": "brier_scores",
       "title": "Brier scores by threshold",
-      "render": true
+      "render": false
     },
     {
       "id": "interval_coverage",

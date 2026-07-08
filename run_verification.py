@@ -52,6 +52,7 @@ from benchmark_ea.verification.plots import (
     plot_temporal_bias_mae,
     plot_timeseries,
 )
+from benchmark_ea.verification.event_plots import plot_event_figures
 from benchmark_ea.verification.style import apply_style
 from benchmark_ea.verification.tables import compute_and_save_tables
 
@@ -175,6 +176,13 @@ def main():
         chirps_2d, era5_2d, tamsat_2d,
         pairs_chirps, pairs_era5, pairs_tamsat,
         args.thresholds, args.output_dir,
+    )
+
+    # ── Event-based figures (drawn from the tables just written) ──
+    plot_event_figures(
+        pd.read_csv(os.path.join(args.output_dir, "event_scores_by_threshold.csv")),
+        pd.read_csv(os.path.join(args.output_dir, "brier_scores.csv")),
+        args.output_dir,
     )
 
     print(f"\nDone. All outputs in {args.output_dir}/")
