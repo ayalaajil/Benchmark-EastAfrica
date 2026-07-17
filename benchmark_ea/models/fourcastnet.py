@@ -21,23 +21,6 @@ Initial conditions
 Loaded from ARCO-ERA5 (anonymous GCS) — same source as GenCast / GraphCast.
 Relative humidity channels ("r{level}") are derived on-the-fly from
 specific humidity and temperature using the Tetens formula.
-
-Grids
------
-FCNv2 (fcnv2_sm): 721 × 1440 (0.25°, lat 90 → -90, includes south-pole row).
-PrecipAFNO:       720 × 1440 (0.25°, lat 90 → -89.75, no south-pole row).
-ARCO-ERA5:        721 × 1440 (lat 90 → -90) — matches FCNv2 exactly; no interp needed.
-When passing FCNv2 output to PrecipAFNO, slice [:720] to drop the south-pole row.
-
-TimeLoop behaviour
-------------------
-`Inference.__call__(time, x)` yields (time, output, restart) starting at t=0
-(the IC itself), then t+6h, t+12h, …  The first yield is the IC, not a forecast
-step — skip it and accumulate from the second yield onwards.
-
-Output format
--------------
-Canonical benchmark zarr: (init_time, sample=1, lead_day, lat, lon), mm/day.
 """
 
 from __future__ import annotations

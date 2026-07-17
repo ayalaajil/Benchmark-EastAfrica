@@ -5,7 +5,7 @@ ERA5 init  : ARCO-ERA5 public zarr on GCS (anonymous)
 
 Inference
 --------------
-1. Load GenCast Mini checkpoint + norm stats + static fields from GCS.
+1. Load GenCast checkpoint + norm stats + static fields from GCS.
 2. Build haiku-transformed, JIT-compiled forward function.
 3. Connect to ARCO-ERA5.
 4. For each init_time in the eval period:
@@ -33,6 +33,15 @@ from benchmark_ea.models.base import ModelAdapter
 
 _GCS_BUCKET = "dm_graphcast"
 _GCS_PREFIX = "gencast/"
+
+# Checkpoint per resolution preset. "1.0" keeps params_file=None so _load_model
+# auto-selects the Mini checkpoint (existing behavior); "0.25" is the full model.
+
+_025_PARAMS = "GenCast 0p25deg <2019.npz"
+CHECKPOINTS = {"1.0": None, "0.25": _025_PARAMS}
+
+# Regrid-weight cache tag per resolution (source grid differs, so weights do too).
+_REGRID_TAG = {"1.0": "gencast", "0.25": "gencast_0p25"}
 
 # ── ERA5 variable groups (matches gencast.TASK) ───────────────────────────────
 
@@ -62,12 +71,21 @@ class GenCastAdapter(ModelAdapter):
 
     def __init__(
         self,
+        resolution:  str        = "1.0",   # "1.0" → Mini, "0.25" → full model
         n_members:   int        = 10,
         rng_seed:    int        = 0,
-        params_file: str | None = None,   # None → auto-select Mini
+        params_file: str | None = None,   # None → auto-select per resolution
     ):
+        self.resolution  = str(resolution)
         self.n_members   = n_members
         self.rng_seed    = rng_seed
+        if params_file is None:
+            if self.resolution not in CHECKPOINTS:
+                raise ValueError(
+                    f"Unknown resolution {resolution!r}; choose one of "
+                    f"{list(CHECKPOINTS)} or pass an explicit params_file."
+                )
+            params_file = CHECKPOINTS[self.resolution]   # None for 1.0 → auto Mini
         self.params_file = params_file
 
     def run_inference(self, config: BenchmarkConfig) -> Path:
@@ -80,8 +98,10 @@ class GenCastAdapter(ModelAdapter):
         )
 
         # ── Load model ────────────────────────────────────────────────────────
-        print("Loading GenCast model from GCS …")
-        params, state, ckpt, stats, static_vars = _load_model(self.params_file)
+        res_str = self.resolution
+        res_deg = float(res_str)
+        print(f"Loading GenCast model ({res_str}°) from GCS …")
+        params, state, ckpt, stats, static_vars = _load_model(self.params_file, res_str)
         task_config = ckpt.task_config
 
         # ── Build JIT forward fn ──────────────────────────────────────────────
@@ -104,7 +124,7 @@ class GenCastAdapter(ModelAdapter):
                 continue
 
             print(f"  {date.date()} — building {max_lead}-day batch …")
-            batch = _build_batch(date, arco, static_vars, levels, max_lead)
+            batch = _build_batch(date, arco, static_vars, levels, max_lead, res_deg=res_deg)
 
             inputs, targets, forcings = _extract(batch, task_config, max_lead)
 
@@ -117,11 +137,7 @@ class GenCastAdapter(ModelAdapter):
             )
 
             save_all = config.save_variables == "all"
-            # When saving every variable we retain the full per-member state, but
-            # subset it to a box around East Africa *before* moving off the GPU so
-            # memory stays bounded (the native global field is discarded). For the
-            # default precip-only path we keep only total_precipitation_12hr, so
-            # the GPU buffer for each chunk is freed step-by-step.
+        
             ea_box = dict(
                 lat=slice(config.lat_min - 2.0, config.lat_max + 2.0),
                 lon=slice(config.lon_min - 2.0, config.lon_max + 2.0),
@@ -139,8 +155,7 @@ class GenCastAdapter(ModelAdapter):
                 s = int(chunk.coords["sample"].values)
                 if save_all:
                     sub = chunk.drop_vars("sample", errors="ignore").sel(**ea_box)
-                    # Rebuild as a plain numpy-backed Dataset; np.asarray triggers
-                    # jax.device_get so the GPU buffer can be freed.
+                    
                     sub = xr.Dataset(
                         {v: (sub[v].dims, np.asarray(sub[v].data))
                          for v in sub.data_vars},
@@ -161,7 +176,7 @@ class GenCastAdapter(ModelAdapter):
             predictions = predictions.assign_coords(sample=np.arange(len(trajectories)))
 
             ds = ModelAdapter.assemble_output(
-                _to_canonical(predictions, date, config),
+                _to_canonical(predictions, date, config, res_str=res_str),
                 predictions if save_all else None,
                 date, config,
                 precip_raw_vars=("total_precipitation_12hr",),
@@ -180,7 +195,7 @@ def _gcs_client():
     return storage.Client.create_anonymous_client()
 
 
-def _load_model(params_file: str | None):
+def _load_model(params_file: str | None, res_str: str = "1.0"):
     """Download checkpoint, norm stats, and static fields from GCS."""
     from graphcast import checkpoint, gencast
     import jax
@@ -224,23 +239,23 @@ def _load_model(params_file: str | None):
 
     # ── static fields ─────────────────────────────────────────────────────────
     print("  Loading static fields …")
-    static_vars = _load_static_fields(bucket)
+    static_vars = _load_static_fields(bucket, res_str)
 
     return params, state, ckpt, stats, static_vars
 
 
-def _load_static_fields(bucket) -> xr.Dataset:
+def _load_static_fields(bucket, res_str: str = "1.0") -> xr.Dataset:
     prefix = f"{_GCS_PREFIX}dataset/"
     for blob in bucket.list_blobs(prefix=prefix):
         name = blob.name.removeprefix(prefix)
-        if name and "res-1.0" in name and "era5" in name.lower():
+        if name and f"res-{res_str}" in name and "era5" in name.lower():
             with blob.open("rb") as f:
                 ds = xr.load_dataset(f, decode_timedelta=False).compute()
             return ds[["land_sea_mask", "geopotential_at_surface"]]
 
     raise FileNotFoundError(
-        f"No ERA5 1° static fields in gs://{_GCS_BUCKET}/{prefix}. "
-        "Expected a file with 'res-1.0' and 'era5' in the name."
+        f"No ERA5 static fields at res-{res_str} in gs://{_GCS_BUCKET}/{prefix}. "
+        f"Expected a file with 'res-{res_str}' and 'era5' in the name."
     )
 
 
@@ -303,8 +318,15 @@ def _connect_arco() -> xr.Dataset:
 
 # ── Batch building ─────────────────────────────────────────────────────────────
 
-_TARGET_LAT = np.arange(-90.0, 91.0, 1.0, dtype=np.float32)
-_TARGET_LON = np.arange(0.0,  360.0, 1.0, dtype=np.float32)
+def _target_grid(res_deg: float):
+    """(lat, lon, is_native) for the model's global grid at *res_deg*.
+
+    is_native is True at 0.25° (matches the ARCO source), so inputs need only a
+    rename/flip rather than a full-globe interpolation.
+    """
+    lat = np.arange(-90.0, 90.0 + res_deg / 2, res_deg, dtype=np.float32)
+    lon = np.arange(0.0, 360.0, res_deg, dtype=np.float32)
+    return lat, lon, abs(res_deg - 0.25) < 1e-6
 
 
 def _build_batch(
@@ -313,51 +335,63 @@ def _build_batch(
     static_vars: xr.Dataset,
     levels:      list,
     max_lead:    int,
+    res_deg:     float = 1.0,
 ) -> xr.Dataset:
     """
     Build a complete GenCast input batch for *date*.
 
     Timestamps: t0, t0+12h  (two input states covering input_duration=24h)
                 t0+24h, ..., t0+(max_lead*2)*12h  (target slots)
-    All target variable values are NaN'd in the targets_template before inference.
+    Only the two input frames carry real data; the target slots are NaN'd before
+    inference regardless, so ARCO is read for those two frames only — essential
+    at 0.25° where a full trajectory would otherwise pull tens of GB per init.
     """
     from graphcast import data_utils
 
     n_target   = max_lead * 2
     timestamps = [date + pd.Timedelta(hours=i * _STEP_HOURS)
                   for i in range(n_target + 2)]
+    input_times = timestamps[:2]
     t0_ns    = np.datetime64(date, "ns")
     rel_times = np.array(
         [(np.datetime64(t, "ns") - t0_ns) for t in timestamps],
         dtype="timedelta64[ns]",
     )
 
-    def _to_1deg(ds: xr.Dataset) -> xr.Dataset:
+    target_lat, target_lon, native = _target_grid(res_deg)
+
+    def _to_grid(ds: xr.Dataset) -> xr.Dataset:
         rename = {k: v for k, v in [("latitude", "lat"), ("longitude", "lon")]
                   if k in ds.coords}
         ds = ds.rename(rename)
         if float(ds.lat[0]) > float(ds.lat[-1]):
             ds = ds.isel(lat=slice(None, None, -1))
-        ds = ds.interp(lat=_TARGET_LAT.astype(float),
-                       lon=_TARGET_LON.astype(float), method="linear")
-        return ds.assign_coords(time=rel_times)
+        if not native:
+            ds = ds.interp(lat=target_lat.astype(float),
+                           lon=target_lon.astype(float), method="linear")
+        return ds
+
+    def _on_full_axis(ds: xr.Dataset) -> xr.Dataset:
+        # Expand the input-only time axis to the full trajectory (targets → NaN),
+        # then switch to relative timedeltas from t0.
+        return ds.reindex(time=timestamps).assign_coords(time=rel_times)
 
     def _add_batch(ds: xr.Dataset) -> xr.Dataset:
         return ds.assign({v: ds[v].expand_dims({"batch": 1}, axis=0)
                           for v in ds.data_vars if "batch" not in ds[v].dims})
 
-    print(f"    Loading ERA5 pressure-level vars …")
-    plevel = _to_1deg(
-        arco[_PLEVEL_VARS].sel(time=timestamps, level=levels).compute()
+    print(f"    Loading ERA5 pressure-level vars (2 input frames) …")
+    plevel = _on_full_axis(_to_grid(
+        arco[_PLEVEL_VARS].sel(time=input_times, level=levels).compute()
         .assign_coords(level=arco.level.sel(level=levels).astype("int32"))
-    )
+    ))
 
-    print(f"    Loading ERA5 surface vars …")
-    surf = _to_1deg(arco[_SURF_VARS].sel(time=timestamps).compute())
+    print(f"    Loading ERA5 surface vars (2 input frames) …")
+    surf = _on_full_axis(_to_grid(arco[_SURF_VARS].sel(time=input_times).compute()))
 
-    print(f"    Loading 12h accumulated precipitation …")
+    print(f"    Loading 12h accumulated precipitation (2 input frames) …")
     precip_chunks = []
-    for t in timestamps:
+    for t in input_times:
         window = (
             arco["total_precipitation"]
             .sel(time=slice(t - pd.Timedelta("11h"), t))
@@ -365,11 +399,11 @@ def _build_batch(
             .compute()
         )
         precip_chunks.append(window.expand_dims({"time": [t]}))
-    precip = _to_1deg(
+    precip = _on_full_axis(_to_grid(
         xr.concat(precip_chunks, dim="time")
         .rename("total_precipitation_12hr")
         .to_dataset()
-    )
+    ))
 
     merged = xr.merge([
         _add_batch(plevel),
@@ -409,6 +443,7 @@ def _to_canonical(
     predictions: xr.Dataset,
     date:        pd.Timestamp,
     config:      BenchmarkConfig,
+    res_str:     str = "1.0",
 ) -> xr.Dataset:
     """
     Convert GenCast 12h-step predictions to canonical benchmark format.
@@ -436,7 +471,7 @@ def _to_canonical(
     )
     ea = regrid.conservative_regrid(
         native, config.lat_vals, config.lon_vals, config.regrid_weights_dir,
-        tag="gencast", subset_buffer=4.0,
+        tag=_REGRID_TAG.get(res_str, f"gencast_{res_str}"), subset_buffer=4.0,
     ).transpose("sample", "lead_day", "lat", "lon")
 
     stacked = ea.values   # (n_members, n_lead, lat, lon)
@@ -452,6 +487,6 @@ def _to_canonical(
                 "lat":       config.lat_vals,
                 "lon":       config.lon_vals,
             },
-            attrs={"units": "mm/day", "model": "gencast"},
+            attrs={"units": "mm/day", "model": f"gencast_{res_str}deg"},
         )
     })

@@ -50,11 +50,18 @@ _ADAPTERS: dict[str, str] = {
 # isn't installed alongside GraphCast/GenCast.
 _DEFAULT_MODELS = ["gencast", "graphcast", "fourcastnet", "climatology"]
 
+# Models that accept a --resolution preset (1.0° small vs 0.25° operational).
+# Others (fourcastnet, climatology, neuralgcm) have a single native resolution.
+_RES_AWARE = {"graphcast", "gencast"}
 
-def _load_adapter(name: str):
+
+def _load_adapter(name: str, resolution: str = "1.0"):
     module_path, cls_name = _ADAPTERS[name].split(":")
     mod = importlib.import_module(module_path)
-    return getattr(mod, cls_name)()
+    cls = getattr(mod, cls_name)
+    if name in _RES_AWARE:
+        return cls(resolution=resolution)
+    return cls()
 
 
 def parse_args(argv=None) -> argparse.Namespace:
@@ -65,6 +72,10 @@ def parse_args(argv=None) -> argparse.Namespace:
     p.add_argument("--models", nargs="+", default=_DEFAULT_MODELS,
                    choices=list(_ADAPTERS.keys()),
                    help="Models to run inference for")
+    p.add_argument("--resolution", choices=["1.0", "0.25"], default="1.0",
+                   help="Checkpoint resolution for resolution-aware models "
+                        "(graphcast): '1.0' = small/13-level, '0.25' = "
+                        "flagship/37-level. Ignored by other models.")
     p.add_argument("--start", default="2024-01-01", help="First init date (YYYY-MM-DD)")
     p.add_argument("--end",   default="2024-12-24", help="Last init date (YYYY-MM-DD)")
     p.add_argument("--lead-days", nargs="+", type=int, default=[1, 3, 5, 7],
@@ -106,6 +117,8 @@ def main(argv=None) -> None:
     print("East Africa benchmark — inference")
     print(f"  dates        : {config.eval_start} … {config.eval_end}")
     print(f"  models       : {', '.join(args.models)}")
+    print(f"  resolution   : {args.resolution}° "
+          f"(applies to: {', '.join(sorted(_RES_AWARE & set(args.models))) or 'none'})")
     print(f"  lead days    : {config.lead_days}")
     print(f"  save vars    : {config.save_variables}"
           + (f" (extra-var members: {config.extra_var_members})"
@@ -115,7 +128,7 @@ def main(argv=None) -> None:
     print(sep)
 
     for model_name in args.models:
-        adapter = _load_adapter(model_name)
+        adapter = _load_adapter(model_name, args.resolution)
         head = "=" * 60
         print(f"\n{head}\nModel: {model_name}\n{head}")
         try:

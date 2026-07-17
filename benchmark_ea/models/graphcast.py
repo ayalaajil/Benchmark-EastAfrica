@@ -52,6 +52,18 @@ GCS_SMALL_PARAMS = (
     "pressure levels 13 - mesh 2to5 - "
     "precipitation input and output.npz"
 )
+# Full-resolution flagship: 0.25°, 37 levels, mesh 2to6, precip in+out — the
+# direct analog of the small model (same input/output structure, higher res).
+GCS_025_PARAMS = (
+    "GraphCast - ERA5 1979-2017 - resolution 0.25 - "
+    "pressure levels 37 - mesh 2to6 - "
+    "precipitation input and output.npz"
+)
+
+# Checkpoint + regrid-weight cache tag per resolution preset. The 1.0° tag is
+# kept as "graphcast_small" so previously cached xESMF weights are reused.
+CHECKPOINTS = {"1.0": GCS_SMALL_PARAMS, "0.25": GCS_025_PARAMS}
+_REGRID_TAG = {"1.0": "graphcast_small", "0.25": "graphcast_0p25"}
 GCS_STATS_NAMES = (
     "stats/diffs_stddev_by_level.nc",
     "stats/mean_by_level.nc",
@@ -74,15 +86,24 @@ _SURF_VARS = (
 
 class GraphCastAdapter(ModelAdapter):
     """
-    Deterministic precipitation forecasts from GraphCast-small (1° / 13 levels).
+    Deterministic precipitation forecasts from GraphCast.
+
+    resolution="1.0"  → GraphCast-small (1° / 13 levels), default.
+    resolution="0.25" → GraphCast flagship (0.25° / 37 levels).
     sample=1 in the output zarr.
     """
 
     name        = "graphcast"
     is_ensemble = False
 
-    def __init__(self, params_file: str = GCS_SMALL_PARAMS):
-        self.params_file = params_file
+    def __init__(self, resolution: str = "1.0", params_file: str | None = None):
+        self.resolution = str(resolution)
+        if params_file is None and self.resolution not in CHECKPOINTS:
+            raise ValueError(
+                f"Unknown resolution {resolution!r}; choose one of "
+                f"{list(CHECKPOINTS)} or pass an explicit params_file."
+            )
+        self.params_file = params_file or CHECKPOINTS[self.resolution]
 
     # ── main entry point ──────────────────────────────────────────────────────
 
@@ -93,9 +114,11 @@ class GraphCastAdapter(ModelAdapter):
         from graphcast import casting, checkpoint, graphcast as gc, normalization, rollout
 
         # ── Load model ────────────────────────────────────────────────────────
-        print("Loading GraphCast-small from GCS …")
+        res_str = self.resolution
+        res_deg = float(res_str)
+        print(f"Loading GraphCast ({res_str}°) from GCS …")
         params, state, model_config, task_config, diffs_std, mean, std, static_vars = (
-            _load_model_and_stats(self.params_file)
+            _load_model_and_stats(self.params_file, res_str)
         )
 
         # ── Build JIT-compiled forward fn ─────────────────────────────────────
@@ -143,7 +166,7 @@ class GraphCastAdapter(ModelAdapter):
             print(f"  {date.date()} — building batch (step={step_hours}h, precip={acc_hours}h) …")
             batch = _build_gc_batch(
                 date, arco, static_vars, task_config, step_hours, max_lead,
-                precip_var=precip_var, acc_hours=acc_hours,
+                precip_var=precip_var, acc_hours=acc_hours, res_deg=res_deg,
             )
 
             inputs, targets_template, forcings = _extract(batch, task_config, step_hours, max_lead)
@@ -159,6 +182,7 @@ class GraphCastAdapter(ModelAdapter):
 
             canonical = _to_canonical(
                 predictions, date, config, step_hours, precip_var, acc_hours,
+                res_str=res_str,
             )
             ds = ModelAdapter.assemble_output(
                 canonical, predictions, date, config,
@@ -190,7 +214,7 @@ def _precip_var_from_task(task_config) -> tuple[str, int]:
 
 # ── Model loading ──────────────────────────────────────────────────────────────
 
-def _load_model_and_stats(params_file: str):
+def _load_model_and_stats(params_file: str, res_str: str = "1.0"):
     """Download checkpoint + norm stats + static fields from GCS (anonymous)."""
     import gcsfs
     from graphcast import checkpoint, graphcast as gc
@@ -213,7 +237,7 @@ def _load_model_and_stats(params_file: str):
             stats[name] = xr.load_dataset(f, decode_timedelta=False).compute()
 
     print("  Downloading static fields …")
-    static_vars = _load_static_fields(fs)
+    static_vars = _load_static_fields(fs, res_str)
 
     return (
         params, state, model_config, task_config,
@@ -224,20 +248,24 @@ def _load_model_and_stats(params_file: str):
     )
 
 
-def _load_static_fields(fs) -> xr.Dataset:
-    """Find and load ERA5 1° static fields (land_sea_mask, geopotential_at_surface)."""
+def _load_static_fields(fs, res_str: str = "1.0") -> xr.Dataset:
+    """
+    Find and load ERA5 static fields (land_sea_mask, geopotential_at_surface)
+    at the requested resolution. These are surface fields, so the file's level
+    count is irrelevant — the first matching res-{res} era5 file is used.
+    """
     prefix = f"{GCS_BUCKET}/dataset/"
     for path in fs.ls(prefix):
         name = path.removeprefix(prefix)
-        if "res-1.0" in name and "era5" in name.lower():
+        if f"res-{res_str}" in name and "era5" in name.lower():
             print(f"  Loading static fields from {name} …")
             with fs.open(path, "rb") as f:
                 ds = xr.load_dataset(f, decode_timedelta=False).compute()
             return ds[["land_sea_mask", "geopotential_at_surface"]]
 
     raise FileNotFoundError(
-        f"No ERA5 1° static fields found in gs://{GCS_BUCKET}/dataset/. "
-        "Expected a file with 'res-1.0' and 'era5' in the name."
+        f"No ERA5 static fields at res-{res_str} in gs://{GCS_BUCKET}/dataset/. "
+        f"Expected a file with 'res-{res_str}' and 'era5' in the name."
     )
 
 
@@ -254,6 +282,39 @@ def _connect_arco() -> xr.Dataset:
     return arco
 
 
+def _target_grid(res_deg: float) -> tuple[np.ndarray, np.ndarray, bool]:
+    """
+    Return (lat, lon, is_native) for the model's global grid at *res_deg*.
+
+    lat spans −90..90 ascending, lon spans 0..360−res. is_native is True when
+    res_deg matches the ARCO source (0.25°), so inputs need no interpolation —
+    only a rename/flip — which avoids resampling the full global field.
+    """
+    lat = np.arange(-90.0, 90.0 + res_deg / 2, res_deg, dtype=np.float32)
+    lon = np.arange(0.0, 360.0, res_deg, dtype=np.float32)
+    is_native = abs(res_deg - 0.25) < 1e-6
+    return lat, lon, is_native
+
+
+def _bring_to_grid(obj, lat: np.ndarray, lon: np.ndarray, native: bool):
+    """Put an ARCO object (latitude/longitude coords) onto the target lat/lon.
+
+    Native resolution → rename + orient only; coarser → linear interpolation.
+    Works for both Dataset and DataArray.
+    """
+    if native:
+        obj = obj.rename({"latitude": "lat", "longitude": "lon"})
+    else:
+        obj = (
+            obj.interp(latitude=lat.astype(float), longitude=lon.astype(float),
+                       method="linear")
+            .rename({"latitude": "lat", "longitude": "lon"})
+        )
+    if float(obj.lat[0]) > float(obj.lat[-1]):
+        obj = obj.isel(lat=slice(None, None, -1))
+    return obj
+
+
 def _build_gc_batch(
     date:       pd.Timestamp,
     arco:       xr.Dataset,
@@ -264,6 +325,7 @@ def _build_gc_batch(
     *,
     precip_var: str,
     acc_hours:  int,
+    res_deg:    float = 1.0,
 ) -> xr.Dataset:
     """
     Build a complete dataset for GraphCast inference at *date*.
@@ -281,40 +343,30 @@ def _build_gc_batch(
 
     # ERA5 levels matching the task pressure levels
     levels = list(task_config.pressure_levels)
-    rename = {"latitude": "lat", "longitude": "lon"}
 
-    def _load_and_regrid(var_list, times):
-        raw = arco[list(var_list)].sel(time=times).compute()
-        raw = raw.rename({k: v for k, v in rename.items() if k in raw.coords})
-        if float(raw.lat[0]) > float(raw.lat[-1]):
-            raw = raw.isel(lat=slice(None, None, -1))
-        return raw
+    target_lat, target_lon, native = _target_grid(res_deg)
 
-    target_lat = np.arange(-90.0, 91.0, 1.0, dtype=np.float32)
-    target_lon = np.arange(0.0,  360.0, 1.0, dtype=np.float32)
+    # Only the two input frames (t-step_h, t) carry real data. GraphCast's target
+    # slots are NaN'd before the rollout regardless (see run_inference), so we
+    # skip downloading them and reindex the inputs onto the full time axis —
+    # the target times fill with NaN. At 0.25°/37-level this cuts the ARCO read
+    # from ~1 GB/frame × all steps down to just the two input frames.
+    input_times = timestamps[:2]
 
-    plevel = (
-        arco[list(_PLEVEL_VARS)].sel(time=timestamps, level=levels)
-        .compute()
-        .interp(latitude=target_lat.astype(float),
-                longitude=target_lon.astype(float), method="linear")
-        .rename({"latitude": "lat", "longitude": "lon"})
-    )
-    if float(plevel.lat[0]) > float(plevel.lat[-1]):
-        plevel = plevel.isel(lat=slice(None, None, -1))
+    plevel = _bring_to_grid(
+        arco[list(_PLEVEL_VARS)].sel(time=input_times, level=levels).compute(),
+        target_lat, target_lon, native,
+    ).reindex(time=timestamps)
+    surf = _bring_to_grid(
+        arco[list(_SURF_VARS)].sel(time=input_times).compute(),
+        target_lat, target_lon, native,
+    ).reindex(time=timestamps)
 
-    surf = (
-        arco[list(_SURF_VARS)].sel(time=timestamps).compute()
-        .interp(latitude=target_lat.astype(float),
-                longitude=target_lon.astype(float), method="linear")
-        .rename({"latitude": "lat", "longitude": "lon"})
-    )
-    if float(surf.lat[0]) > float(surf.lat[-1]):
-        surf = surf.isel(lat=slice(None, None, -1))
-
-    # Accumulated precipitation: use acc_hours from the task config
-    # (e.g. acc_hours=6 for total_precipitation_6hr, regardless of step_hours).
-    precip_da = _load_precip_accumulated(arco, timestamps, acc_hours, target_lat, target_lon)
+    # Accumulated precipitation for the input frames only (targets → NaN via
+    # reindex). acc_hours comes from the task config (e.g. 6 for *_6hr).
+    precip_da = _load_precip_accumulated(
+        arco, input_times, acc_hours, target_lat, target_lon, native,
+    ).reindex(time=timestamps)
 
     # Build absolute-time dataset, then add derived variables
     # (year/day progress, TOA solar radiation).
@@ -356,6 +408,7 @@ def _load_precip_accumulated(
     step_hours: int,
     lat:        np.ndarray,
     lon:        np.ndarray,
+    native:     bool = False,
 ) -> xr.DataArray:
     """Load step_hours-accumulated precipitation from ARCO hourly values."""
     chunks = []
@@ -369,13 +422,7 @@ def _load_precip_accumulated(
         chunks.append(window.expand_dims({"time": [t]}))
 
     da = xr.concat(chunks, dim="time")
-    da = (
-        da.interp(latitude=lat.astype(float), longitude=lon.astype(float), method="linear")
-        .rename({"latitude": "lat", "longitude": "lon"})
-    )
-    if float(da.lat[0]) > float(da.lat[-1]):
-        da = da.isel(lat=slice(None, None, -1))
-    return da
+    return _bring_to_grid(da, lat, lon, native)
 
 
 def _extract(batch, task_config, step_hours: int, max_lead: int):
@@ -400,6 +447,7 @@ def _to_canonical(
     step_hours:  int,
     precip_var:  str,
     acc_hours:   int,
+    res_str:     str = "1.0",
 ) -> xr.Dataset:
     """
     Accumulate GraphCast precipitation predictions to daily totals.
@@ -439,7 +487,7 @@ def _to_canonical(
     )
     ea = regrid.conservative_regrid(
         native, config.lat_vals, config.lon_vals, config.regrid_weights_dir,
-        tag="graphcast_small", subset_buffer=4.0,
+        tag=_REGRID_TAG.get(res_str, f"graphcast_{res_str}"), subset_buffer=4.0,
     ).transpose("lead_day", "lat", "lon")
 
     # GraphCast is deterministic → sample=1
@@ -458,7 +506,7 @@ def _to_canonical(
                     "lat":       config.lat_vals,
                     "lon":       config.lon_vals,
                 },
-                attrs={"units": "mm/day", "model": "graphcast_small"},
+                attrs={"units": "mm/day", "model": f"graphcast_{res_str}deg"},
             )
         }
     )
