@@ -1,6 +1,6 @@
 // Figure and table catalog, the single source of truth for what the site shows.
 // Kept as `window.MANIFEST = <pure JSON>;` so sync_outputs.py can parse and
-// validate it against the files actually copied from mam2024_analysis_outputs/.
+// validate it against the files actually copied from outputs_2024/.
 window.MANIFEST = {
   "figures": [
     {

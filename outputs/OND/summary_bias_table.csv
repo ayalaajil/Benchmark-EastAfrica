@@ -1,0 +1,13 @@
+model,vs,season,bias (mm/d),MAE (mm/d),RMSE (mm/d)
+fourcastnet,CHIRPS,OND,-0.815,2.07,4.899
+fourcastnet,ERA5,OND,-0.86,1.567,3.862
+fourcastnet,TAMSAT,OND,-0.655,2.1,4.487
+gencast,CHIRPS,OND,-0.111,2.231,5.633
+gencast,ERA5,OND,-0.157,1.428,4.166
+gencast,TAMSAT,OND,0.05,2.355,5.559
+graphcast,CHIRPS,OND,-0.285,2.482,5.518
+graphcast,ERA5,OND,-0.33,1.992,4.608
+graphcast,TAMSAT,OND,-0.125,2.501,5.115
+neuralgcm,CHIRPS,OND,0.053,2.381,4.989
+neuralgcm,ERA5,OND,0.008,1.91,4.116
+neuralgcm,TAMSAT,OND,0.214,2.428,4.623

@@ -1,5 +1,5 @@
 """
-Sync the dashboard's figures and tables from mam2024_analysis_outputs/.
+Sync the dashboard's figures and tables from outputs_2024/.
 
 What it produces:
   figures/*.pdf      paper-quality vector PDFs, mirrored as-is (the download)
@@ -31,7 +31,7 @@ from pathlib import Path
 from PIL import Image
 
 HERE = Path(__file__).resolve().parent
-SRC = HERE.parent / "mam2024_analysis_outputs"
+SRC = HERE.parent / "outputs_2024"
 FIGURES = HERE / "figures"
 WEB = FIGURES / "web"
 TABLES = HERE / "tables"

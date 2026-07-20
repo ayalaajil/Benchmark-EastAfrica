@@ -21,7 +21,7 @@ python -m http.server 8000 --directory website
 ## Refresh after a pipeline rerun
 
 ```bash
-python run_verification.py          # regenerates mam2024_analysis_outputs/
+python run_verification.py          # regenerates outputs_2024/
 python website/sync_outputs.py      # PDFs/CSVs mirrored, WebPs generated, tables embedded
 ```
 

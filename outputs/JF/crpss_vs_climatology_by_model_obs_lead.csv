@@ -1,0 +1,17 @@
+model,obs,lead_day,season,crps_model,crps_climatology,crpss
+fourcastnet,CHIRPS,1,JF,2.1139,1.5408,-0.372
+gencast,CHIRPS,1,JF,1.6629,1.5408,-0.0793
+graphcast,CHIRPS,1,JF,2.6121,1.5408,-0.6953
+neuralgcm,CHIRPS,1,JF,1.801,1.5408,-0.1689
+fourcastnet,CHIRPS,3,JF,2.1367,1.532,-0.3947
+gencast,CHIRPS,3,JF,1.5035,1.532,0.0186
+graphcast,CHIRPS,3,JF,2.7411,1.532,-0.7892
+neuralgcm,CHIRPS,3,JF,1.6248,1.532,-0.0606
+fourcastnet,CHIRPS,5,JF,2.1063,1.4897,-0.4138
+gencast,CHIRPS,5,JF,1.4763,1.4897,0.009
+graphcast,CHIRPS,5,JF,2.8782,1.4897,-0.9321
+neuralgcm,CHIRPS,5,JF,1.5485,1.4897,-0.0395
+fourcastnet,CHIRPS,7,JF,2.117,1.4742,-0.436
+gencast,CHIRPS,7,JF,1.4708,1.4742,0.0023
+graphcast,CHIRPS,7,JF,3.3053,1.4742,-1.2421
+neuralgcm,CHIRPS,7,JF,1.5652,1.4742,-0.0617

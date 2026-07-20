@@ -1,0 +1,17 @@
+model,truth,lead_day,season,spread_fortin,rmse_ens_mean,ssr
+gencast,CHIRPS,1,annual,3.1289,5.7468,0.5445
+gencast,CHIRPS,3,annual,3.6622,4.9387,0.7415
+gencast,CHIRPS,5,annual,4.1902,5.0424,0.831
+gencast,CHIRPS,7,annual,4.2886,5.0158,0.855
+neuralgcm,CHIRPS,1,annual,2.096,5.1864,0.4041
+neuralgcm,CHIRPS,3,annual,2.7205,4.9484,0.5498
+neuralgcm,CHIRPS,5,annual,2.7187,4.8183,0.5642
+neuralgcm,CHIRPS,7,annual,3.1103,4.8536,0.6408
+gencast,TAMSAT,1,annual,3.1318,5.9367,0.5275
+gencast,TAMSAT,3,annual,3.665,4.9313,0.7432
+gencast,TAMSAT,5,annual,4.1937,5.0007,0.8386
+gencast,TAMSAT,7,annual,4.2922,4.9243,0.8716
+neuralgcm,TAMSAT,1,annual,2.0977,5.1817,0.4048
+neuralgcm,TAMSAT,3,annual,2.7227,4.885,0.5574
+neuralgcm,TAMSAT,5,annual,2.7208,4.7101,0.5777
+neuralgcm,TAMSAT,7,annual,3.113,4.7608,0.6539

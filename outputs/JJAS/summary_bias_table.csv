@@ -1,0 +1,13 @@
+model,vs,season,bias (mm/d),MAE (mm/d),RMSE (mm/d)
+fourcastnet,CHIRPS,JJAS,-0.719,1.873,4.242
+fourcastnet,ERA5,JJAS,-0.783,1.434,3.81
+fourcastnet,TAMSAT,JJAS,-0.882,2.094,4.608
+gencast,CHIRPS,JJAS,-0.104,2.033,4.81
+gencast,ERA5,JJAS,-0.168,1.301,3.496
+gencast,TAMSAT,JJAS,-0.266,2.298,5.196
+graphcast,CHIRPS,JJAS,-0.092,2.248,4.82
+graphcast,ERA5,JJAS,-0.156,1.841,4.377
+graphcast,TAMSAT,JJAS,-0.254,2.447,5.097
+neuralgcm,CHIRPS,JJAS,-0.189,2.105,4.312
+neuralgcm,ERA5,JJAS,-0.253,1.856,4.257
+neuralgcm,TAMSAT,JJAS,-0.351,2.355,4.683

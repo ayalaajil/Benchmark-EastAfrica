@@ -1,14 +1,16 @@
 """
 Event-based verification figures — plotted from the score tables.
 
-Drawn from the tidy DataFrames that tables.py writes
-(event_scores_by_threshold.csv, brier_scores.csv), so they can be produced
-inside a run_verification run or regenerated standalone from the CSVs:
+Drawn from the tidy per-season CSVs that tables.py writes
+(<out>/<season>/event_scores_by_threshold.csv, <out>/<season>/brier_scores.csv),
+so they can be produced inside a run_verification run or regenerated
+standalone from the CSVs:
 
-    python -m benchmark_ea.verification.event_plots <tables_dir> <out_dir>
+    python -m benchmark_ea.verification.event_plots <out_dir>
 
-Three figures per reference (CHIRPS, ERA5), all sharing one grammar —
-one column per lead day, x = discrete event thresholds, one curve per model:
+Three figures per reference (CHIRPS, ERA5) per season folder, all sharing one
+grammar — one column per lead day, x = discrete event thresholds, one curve
+per model:
 
 - event_skill_curves_<obs>: CSI (top) and frequency bias (bottom, FB = 1
   reference line).
@@ -27,6 +29,7 @@ import numpy as np
 import pandas as pd
 from matplotlib.lines import Line2D
 
+from benchmark_ea.verification.seasons import SEASONS, season_title
 from benchmark_ea.verification.style import (
     FULL_WIDTH,
     INK2,
@@ -97,15 +100,20 @@ def _event_pair_figure(df, models, lead_days, thresholds,
     savefig(fig, out, fname)
 
 
-def plot_event_scores(event_df, obs, out):
-    """Event-based skill vs threshold from event_scores_by_threshold.csv, so
-    figures and table always agree. Writes two figures:
+def plot_event_scores(df, obs, out, season):
+    """Event-based skill vs threshold from a (single-season) event_scores
+    table, so figures and table always agree. Writes two figures:
     event_skill_curves_<obs> (CSI + frequency bias) and
-    event_pod_far_<obs> (POD + FAR, the detection/false-alarm trade-off)."""
-    df = event_df[event_df["obs"] == obs]
+    event_pod_far_<obs> (POD + FAR, the detection/false-alarm trade-off).
+    ``df`` is already scoped to one season (see plot_event_figures) — the
+    season only affects the figure title, not what rows are plotted."""
+    df = df[df["obs"] == obs]
+    if df.empty:
+        return
     lead_days = sorted(df["lead_day"].unique())
     thresholds = sorted(df["threshold_mm_day"].unique())
     models = _model_order(df)
+    title_period = season_title(season)
 
     csi_max = df["csi"].max()
     fb_max = df["frequency_bias"].max()
@@ -116,7 +124,7 @@ def plot_event_scores(event_df, obs, out):
         {"key": "frequency_bias", "ylabel": "Frequency bias (FB)",
          "ylim": (0, max(1.35, 1.08 * fb_max)),
          "ref": 1.0, "ref_text": "unbiased ", "ref_label": "Unbiased (FB = 1)"},
-        f"Event detection skill vs threshold, truth = {obs}, MAM 2024",
+        f"Event detection skill vs threshold, truth = {obs}, {title_period}",
         f"event_skill_curves_{obs.lower()}", out)
 
     _event_pair_figure(
@@ -126,19 +134,23 @@ def plot_event_scores(event_df, obs, out):
         {"key": "far", "ylabel": "False-alarm ratio (FAR)",
          "ylim": (0, 1)},
         "Event detection vs false alarms by threshold, "
-        f"truth = {obs}, MAM 2024",
+        f"truth = {obs}, {title_period}",
         f"event_pod_far_{obs.lower()}", out)
 
 
-def plot_brier_curves(brier_df, obs, out):
+def plot_brier_curves(df, obs, out, season):
     """Raw Brier score vs threshold, one column per lead day, ensemble models
     only (deterministic models have no forecast probabilities). The dashed
     curve is the climatological base-rate Brier p(1 - p) — the score of always
-    forecasting the observed event frequency; below it = real resolution."""
-    df = brier_df[brier_df["obs"] == obs]
+    forecasting the observed event frequency; below it = real resolution.
+    ``df`` is already scoped to one season, as in ``plot_event_scores``."""
+    df = df[df["obs"] == obs]
+    if df.empty:
+        return
     lead_days = sorted(df["lead_day"].unique())
     thresholds = sorted(df["threshold_mm_day"].unique())
     models = _model_order(df)
+    title_period = season_title(season)
     x = np.arange(len(thresholds))
 
     fig, axes = plt.subplots(1, len(lead_days), figsize=(FULL_WIDTH, 2.6),
@@ -167,29 +179,42 @@ def plot_brier_curves(brier_df, obs, out):
     fig.legend(handles=_model_handles(models) + [
         Line2D([0], [0], label="Climatological base rate p(1 − p)", **REF_LINE),
     ], loc="outside lower center", ncol=len(models) + 1)
-    fig.suptitle(f"Brier score by threshold, truth = {obs}, MAM 2024")
+    fig.suptitle(f"Brier score by threshold, truth = {obs}, {title_period}")
     savefig(fig, out, f"brier_curves_{obs.lower()}")
 
 
-def plot_event_figures(event_df, brier_df, out, obs_labels=("CHIRPS", "ERA5")):
+def plot_event_figures(out, obs_labels=("CHIRPS", "ERA5"), seasons=SEASONS):
     """All event-based figures for run_verification: CSI+FB curves, POD+FAR
-    curves and Brier-by-threshold curves per reference."""
+    curves and Brier-by-threshold curves per reference, one set per season
+    folder under ``out`` (see ``compute_and_save_tables`` — each season's
+    event_scores_by_threshold.csv / brier_scores.csv already lives in
+    ``out/<season>/``, so figures and tables always agree and no season
+    filtering is needed here). A season is skipped if its tables aren't
+    present (e.g. a partial run)."""
     print("\n[11] Event-based figures …")
-    for obs in obs_labels:
-        plot_event_scores(event_df, obs, out)
-        plot_brier_curves(brier_df, obs, out)
+    for season in seasons:
+        season_dir = os.path.join(out, season)
+        event_path = os.path.join(season_dir, "event_scores_by_threshold.csv")
+        brier_path = os.path.join(season_dir, "brier_scores.csv")
+        if not (os.path.exists(event_path) and os.path.exists(brier_path)):
+            continue
+        event_df = pd.read_csv(event_path)
+        brier_df = pd.read_csv(brier_path)
+        for obs in obs_labels:
+            plot_event_scores(event_df, obs, season_dir, season)
+            plot_brier_curves(brier_df, obs, season_dir, season)
 
 
 def main(argv):
-    if len(argv) != 2:
-        sys.exit("usage: python -m benchmark_ea.verification.event_plots "
-                 "<tables_dir> <out_dir>")
-    tables_dir, out = argv
-    os.makedirs(out, exist_ok=True)
+    if len(argv) != 1:
+        sys.exit("usage: python -m benchmark_ea.verification.event_plots <out_dir>\n"
+                 "  <out_dir> must contain the per-season subfolders written by "
+                 "compute_and_save_tables (out_dir/<season>/event_scores_by_threshold.csv, "
+                 "out_dir/<season>/brier_scores.csv); figures are written into the same "
+                 "per-season subfolders.")
+    out, = argv
     apply_style()
-    event_df = pd.read_csv(os.path.join(tables_dir, "event_scores_by_threshold.csv"))
-    brier_df = pd.read_csv(os.path.join(tables_dir, "brier_scores.csv"))
-    plot_event_figures(event_df, brier_df, out)
+    plot_event_figures(out)
 
 
 if __name__ == "__main__":

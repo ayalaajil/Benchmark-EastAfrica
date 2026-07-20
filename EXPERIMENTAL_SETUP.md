@@ -17,9 +17,12 @@ convectively-dominated tropical region.
 We evaluate on a common regular grid spanning **12°S–15°N and 28°E–52°E at 1°
 resolution** (28 × 25 = 700 grid cells), which matches the native output
 resolution of the graph-based models and serves as the lowest common denominator
-across all systems. Verification is restricted to land using a mask derived from
-the Natural Earth 50 m land polygons (~512 land cells); ocean and large
-inland-lake cells are excluded throughout. For regional analysis we further
+across all systems. Verification is restricted to land using a common mask
+derived from CHIRPS validity — cells where the regridded CHIRPS field is
+finite on at least 99% of the loaded days (~512 land cells) — applied
+identically to CHIRPS, ERA5, and TAMSAT, so ocean and large inland-lake cells
+are excluded throughout regardless of which reference a score is computed
+against. For regional analysis we further
 subset the domain into the seven flood-season countries of the Greater Horn of
 Africa — Kenya, Ethiopia, Tanzania, Somalia, Uganda, Rwanda, and Burundi — and
 into zonal latitude bands. All spatially aggregated statistics use cos(latitude)

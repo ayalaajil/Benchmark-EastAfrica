@@ -14,6 +14,7 @@ Array conventions:
 from __future__ import annotations
 
 import glob
+import re
 
 import numpy as np
 import pandas as pd
@@ -27,6 +28,36 @@ _TRUTH_IO = {
     "chirps": (chirps_io, "chirps"),
     "tamsat": (tamsat_io, "tamsat"),
 }
+
+_PRED_FILENAME_RE = re.compile(r"pred_(\d{4}-\d{2}-\d{2})\.zarr$")
+
+
+def _init_date_from_path(path) -> pd.Timestamp:
+    """The init date for a ``pred_YYYY-MM-DD.zarr`` file, parsed from its
+    filename — the authoritative source of truth for init_time throughout
+    this codebase (it's how these files are matched and organized), used in
+    preference to the store's own init_time coordinate.
+
+    NeuralGCM's writer has been observed to save a corrupted, undecodable
+    init_time value (the same garbage int64 in every single file,
+    independent of date) while every other coordinate/variable in the same
+    store is intact; deriving init_time from the filename sidesteps that
+    corruption instead of trying to repair it in place.
+    """
+    m = _PRED_FILENAME_RE.search(str(path))
+    if not m:
+        raise ValueError(f"cannot parse init date from filename: {path}")
+    return pd.Timestamp(m.group(1))
+
+
+def open_pred_da(path, var="total_precipitation"):
+    """Open one ``pred_YYYY-MM-DD.zarr`` and return its ``var`` DataArray with
+    init_time set from the filename (see ``_init_date_from_path``) — opening
+    with ``decode_times=False`` so a corrupted init_time encoding in one
+    model's files can't crash loading of any model's data."""
+    ds = xr.open_zarr(path, decode_times=False)
+    da = ds[var]
+    return da.assign_coords(init_time=[_init_date_from_path(path)])
 
 
 def load_predictions(pred_dir, models):
@@ -43,7 +74,7 @@ def load_predictions(pred_dir, models):
         files = sorted(glob.glob(f"{pred_dir}/{m}/pred_2024-*.zarr"))
         if not files:
             raise FileNotFoundError(f"No prediction files found for {m} in {pred_dir}/{m}/")
-        parts = [xr.open_zarr(f)["total_precipitation"] for f in files]
+        parts = [open_pred_da(f) for f in files]
         grids = {(p.sizes["lat"], p.sizes["lon"]) for p in parts}
         if len(grids) > 1:
             raise ValueError(

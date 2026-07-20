@@ -45,6 +45,7 @@ from benchmark_ea.verification.scores import (
     spread_skill_pooled,
     ssr_by_lat,
 )
+from benchmark_ea.verification.seasons import filter_by_season, filter_index_by_season, season_title
 from benchmark_ea.verification.style import (
     CMAP_BIAS,
     CMAP_ERROR,
@@ -113,10 +114,18 @@ def _map_chrome(ax, extent, proj, left_labels=False, bottom_labels=False):
 
 # ── [1] Area-mean timeseries ──────────────────────────────────────────────────
 
-def plot_timeseries(preds, models, init_dates, lead_days,
+def plot_timeseries(preds, models, init_dates, lead_days, season,
                     chirps_lookup, era5_lookup, tamsat_lookup, out):
-    print("\n[1] Timeseries …")
-    ts_models = {m: {ld: area_mean_ts(preds, m, init_dates, ld) for ld in lead_days}
+    """Daily area-mean precipitation, one season at a time — a full-2024
+    version is unreadably dense at daily resolution, so this is always
+    scoped to one season (``season`` in benchmark_ea.verification.seasons.
+    REAL_SEASONS); ``out`` is that season's output folder."""
+    print(f"\n[1] Timeseries ({season}) …")
+    season_dates = {ld: filter_by_season(init_dates, ld, season) for ld in lead_days}
+    if all(len(season_dates[ld]) == 0 for ld in lead_days):
+        print(f"  [skip timeseries — no {season} cases in this run]")
+        return
+    ts_models = {m: {ld: area_mean_ts(preds, m, season_dates[ld], ld) for ld in lead_days}
                  for m in models}
     obs_lookups = {"CHIRPS": chirps_lookup, "ERA5": era5_lookup,
                    "TAMSAT": tamsat_lookup}
@@ -125,7 +134,7 @@ def plot_timeseries(preds, models, init_dates, lead_days,
                              figsize=(FULL_WIDTH, 1.55 * len(lead_days) + 0.5),
                              sharex=True, sharey=True)
     for ax, ld in zip(np.atleast_1d(axes), lead_days):
-        valid_dates = init_dates + pd.Timedelta(days=ld)
+        valid_dates = season_dates[ld] + pd.Timedelta(days=ld)
         for m in models:
             s = ts_models[m][ld]
             ax.plot(s.index, s.values, color=MODEL_COLORS[m], lw=1.1, alpha=0.9)
@@ -142,26 +151,35 @@ def plot_timeseries(preds, models, init_dates, lead_days,
                [Line2D([0], [0], lw=1.4, label=k, **OBS_STYLES[k])
                 for k in obs_lookups],
                loc="outside lower center", ncol=len(models) + 3)
-    fig.suptitle("East Africa area-mean daily precipitation — MAM 2024")
+    fig.suptitle(f"East Africa area-mean daily precipitation — {season_title(season)}")
     savefig(fig, out, "timeseries")
 
 
 # ── [2] Temporal error curves ─────────────────────────────────────────────────
 
-def plot_temporal_bias_mae(temporal, models, lead_days, out):
-    """Bias and MAE vs valid date (7-day rolling mean), one column per lead."""
-    print("\n[2] Temporal bias/MAE curves …")
+def plot_temporal_bias_mae(temporal, models, lead_days, season, out):
+    """Bias and MAE vs valid date (7-day rolling mean), one column per lead,
+    scoped to one season (see plot_timeseries) — ``temporal`` is the full
+    annual dict from compute_temporal_metrics; this filters each series to
+    ``season`` before plotting."""
+    print(f"\n[2] Temporal bias/MAE curves ({season}) …")
     nld = len(lead_days)
-    max_bias = max(temporal[m][ld]["bias"].abs().quantile(0.98)
-                   for m in models for ld in lead_days)
+    sub = {m: {ld: filter_index_by_season(temporal[m][ld], season) for ld in lead_days}
+           for m in models}
+    bias_maxes = [sub[m][ld]["bias"].abs().quantile(0.98) for m in models for ld in lead_days
+                 if not sub[m][ld].empty]
+    if not bias_maxes:
+        print(f"  [skip temporal_bias_mae — no {season} cases in this run]")
+        return
+    max_bias = max(bias_maxes)
 
     fig, axes = plt.subplots(2, nld, figsize=(FULL_WIDTH, 3.6),
                              sharey="row", sharex="col")
     for col, ld in enumerate(lead_days):
         for m in models:
-            axes[0, col].plot(_roll(temporal[m][ld]["bias"].dropna()),
+            axes[0, col].plot(_roll(sub[m][ld]["bias"].dropna()),
                               color=MODEL_COLORS[m], lw=1.2)
-            axes[1, col].plot(_roll(temporal[m][ld]["mae"].dropna()),
+            axes[1, col].plot(_roll(sub[m][ld]["mae"].dropna()),
                               color=MODEL_COLORS[m], lw=1.2)
         axes[0, col].axhline(0, **REF_LINE)
         axes[0, col].set_ylim(-max_bias, max_bias)
@@ -174,17 +192,23 @@ def plot_temporal_bias_mae(temporal, models, lead_days, out):
 
     fig.legend(handles=_model_handles(models),
                loc="outside lower center", ncol=len(models))
-    fig.suptitle("Forecast error vs CHIRPS (7-day rolling mean)")
+    fig.suptitle(f"Forecast error vs CHIRPS (7-day rolling mean), {season_title(season)}")
     savefig(fig, out, "temporal_bias_mae")
 
 
-def plot_ensemble_temporal(temporal, ens_models, lead_days, out):
+def plot_ensemble_temporal(temporal, ens_models, lead_days, season, out):
     """CRPS, spread and spread/skill vs valid date; rows = ensemble models,
-    columns = metrics, one curve per lead day (ordinal blue ramp)."""
-    print("\n[3] Ensemble CRPS / spread / SSR curves …")
+    columns = metrics, one curve per lead day (ordinal blue ramp), scoped to
+    one season as in plot_temporal_bias_mae."""
+    print(f"\n[3] Ensemble CRPS / spread / SSR curves ({season}) …")
     metrics = [("crps",               "CRPS (mm day$^{-1}$)"),
                ("spread",             "Spread (mm day$^{-1}$)"),
                ("spread_skill_ratio", "Spread / RMSE")]
+    sub = {m: {ld: filter_index_by_season(temporal[m][ld], season) for ld in lead_days}
+           for m in ens_models}
+    if all(sub[m][ld].empty for m in ens_models for ld in lead_days):
+        print(f"  [skip ensemble_crps_spread_ssr — no {season} cases in this run]")
+        return
 
     nrow = len(ens_models)
     fig, axes = plt.subplots(nrow, 3, figsize=(FULL_WIDTH, 1.85 * nrow + 0.9),
@@ -193,7 +217,7 @@ def plot_ensemble_temporal(temporal, ens_models, lead_days, out):
         for c, (metric, label) in enumerate(metrics):
             ax = axes[r, c]
             for i, ld in enumerate(lead_days):
-                ax.plot(_roll(temporal[m][ld][metric].dropna()),
+                ax.plot(_roll(sub[m][ld][metric].dropna()),
                         color=lead_color(i, len(lead_days)), lw=1.2)
             grid_y(ax)
             _month_axis(ax)
@@ -204,7 +228,8 @@ def plot_ensemble_temporal(temporal, ens_models, lead_days, out):
 
     fig.legend(handles=_lead_handles(lead_days),
                loc="outside lower center", ncol=len(lead_days))
-    fig.suptitle("Ensemble skill and dispersion vs CHIRPS (7-day rolling mean)")
+    fig.suptitle(f"Ensemble skill and dispersion vs CHIRPS (7-day rolling mean), "
+                f"{season_title(season)}")
     savefig(fig, out, "ensemble_crps_spread_ssr")
 
 
@@ -255,7 +280,7 @@ def plot_rank_histograms(preds, ens_models, init_dates, lead_days,
         fig.legend(handles=[Line2D([0], [0], label="Uniform (calibrated)",
                                    **REF_LINE)],
                    loc="outside lower center")
-        fig.suptitle(f"{MODEL_LABELS[model]} rank histograms MAM 2024")
+        fig.suptitle(f"{MODEL_LABELS[model]} rank histograms 2024")
         savefig(fig, out, f"rank_histograms_{model}")
 
 
@@ -385,7 +410,7 @@ def plot_spatial_maps(preds, models, init_dates, chirps_2d, era5_2d,
                     cbar.outline.set_linewidth(0.4)
 
             fig.suptitle(f"Spatial forecast errors vs {obs_label}, "
-                         f"lead day {ld}, MAM 2024")
+                         f"lead day {ld}, 2024")
             savefig(fig, out, f"spatial_maps_{obs_label.lower()}_ld{ld}")
 
 
@@ -440,7 +465,7 @@ def plot_crpss_maps(preds, models, obs_2d, init_dates, lead_days, out,
         cbar.ax.tick_params(labelsize=6)
         cbar.outline.set_linewidth(0.4)
     fig.suptitle(f"CRPS skill score vs climatology, {obs_label.upper()}, "
-                 "MAM 2024")
+                 "2024")
     savefig(fig, out, f"crpss_maps_{obs_label}")
 
 
@@ -475,7 +500,7 @@ def plot_acc_curves(preds, models, truth_sources, init_dates, lead_days, out):
 
     fig.legend(handles=_model_handles(models),
                loc="outside lower center", ncol=len(models))
-    fig.suptitle("Anomaly correlation coefficient vs lead day, MAM 2024")
+    fig.suptitle("Anomaly correlation coefficient vs lead day, 2024")
     savefig(fig, out, "acc_lead_curves")
     return acc
 
@@ -517,7 +542,7 @@ def plot_ssr_lead_curves(preds, ens_models, obs_2d, init_dates, lead_days,
         Line2D([0], [0], color=INK2, lw=1.2, ls=(0, (4, 2)), label="Spread"),
     ], loc="outside lower center", ncol=4)
     fig.suptitle("Ensemble spread-skill vs lead day, "
-                 f"truth = {truth_label.upper()}, MAM 2024")
+                 f"truth = {truth_label.upper()}, 2024")
     savefig(fig, out, f"ssr_lead_curves_{truth_label}")
 
 
@@ -551,5 +576,5 @@ def plot_ssr_zonal(preds, ens_models, obs_2d, init_dates, lead_days, out,
                [Line2D([0], [0], label="Calibrated (SSR = 1)", **REF_LINE)],
                loc="outside lower center", ncol=len(lead_days) + 1)
     fig.suptitle("Zonal spread-skill profile, "
-                 f"truth = {truth_label.upper()}, MAM 2024")
+                 f"truth = {truth_label.upper()}, 2024")
     savefig(fig, out, f"ssr_zonal_{truth_label}")

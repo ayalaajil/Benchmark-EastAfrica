@@ -13,9 +13,11 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
+from benchmark_ea.analysis_io import open_pred_da
 from benchmark_ea.truth import chirps as chirps_io
 from benchmark_ea.truth import era5 as era5_io
 from benchmark_ea.truth import tamsat as tamsat_io
+from benchmark_ea.verification.mask import apply_land_mask, land_mask
 
 
 def load_climatology_reference(pred_dir):
@@ -28,7 +30,7 @@ def load_climatology_reference(pred_dir):
     files = sorted(glob.glob(f"{pred_dir}/climatology/pred_2024-*.zarr"))
     if not files:
         return None
-    parts = [xr.open_zarr(f)["total_precipitation"] for f in files]
+    parts = [open_pred_da(f) for f in files]
     grids = {(p.sizes["lat"], p.sizes["lon"]) for p in parts}
     if len(grids) > 1:
         raise ValueError(
@@ -45,9 +47,12 @@ def load_climatology_reference(pred_dir):
     return xr.concat(parts, dim="init_time")
 
 
-def load_observations(config, obs_end, output_dir):
+def load_observations(config, start, obs_end, output_dir):
+    """Load CHIRPS/ERA5/TAMSAT for [start, obs_end]. ``start`` must match the
+    verification init-date range (not just its MAM subset) — otherwise
+    seasons outside MAM (e.g. JF) would have no observations at all to score
+    against on a full-year run."""
     print("\nLoading observations …")
-    start = "2024-03-01"
     chirps_da = chirps_io.load(start, obs_end, config.lat_vals, config.lon_vals,
                                config.chirps_cache_dir, download_missing=False)
     print(f"  CHIRPS  {dict(zip(chirps_da.dims, chirps_da.shape))}")
@@ -64,12 +69,27 @@ def load_observations(config, obs_end, output_dir):
 
 
 def build_lookup_dicts(chirps_da, era5_da, tamsat_da):
+    """Build the per-date {date: (lat, lon)} lookups, all masked to the same
+    common land cells.
+
+    CHIRPS is NaN over ocean at the source; ERA5 (a reanalysis) is not, so
+    without an explicit common mask ERA5-verified scores would silently pool
+    ocean cells that every CHIRPS/TAMSAT-verified score excludes. The mask is
+    derived from CHIRPS validity (see ``verification.mask``) and applied to
+    all three references here, once, so every downstream gather sees an
+    identical cell set regardless of which reference it scores against.
+    """
     chirps_2d = {pd.Timestamp(t).date(): chirps_da.sel(time=t).values
                  for t in chirps_da.time.values}
     era5_2d   = {pd.Timestamp(t).date(): era5_da.sel(time=t).values
                  for t in era5_da.time.values}
     tamsat_2d = {pd.Timestamp(t).date(): tamsat_da.sel(time=t).values
                  for t in tamsat_da.time.values}
+
+    mask = land_mask(chirps_da)
+    chirps_2d = apply_land_mask(chirps_2d, mask)
+    era5_2d   = apply_land_mask(era5_2d, mask)
+    tamsat_2d = apply_land_mask(tamsat_2d, mask)
 
     chirps_lookup  = {d: float(np.nanmean(v)) for d, v in chirps_2d.items()}
     era5_lookup    = {d: float(np.nanmean(v)) for d, v in era5_2d.items()}

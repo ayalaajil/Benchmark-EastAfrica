@@ -1,35 +1,41 @@
 #!/usr/bin/env bash
-# Run MAM 2024 inference for all models in parallel, one GPU each.
-#
+# Run inference for all models in parallel, one GPU each, over any
+# start/end date range 
+
 # GPU assignments (change if those GPUs are busy):
 #   GPU 0 → GenCast      (JAX, ~40 GB for 50 members)
 #   GPU 1 → GraphCast    (JAX, ~15 GB deterministic)
 #   GPU 2 → FourCastNet  (PyTorch, ~20 GB FCNv2 + PrecipAFNO)
 #
 # Each model's output goes to ${OUTPUT_DIR}/<model>/ (default data/predictions).
-# Logs: logs/2024/<model>.log
+# Logs: logs/<start-year>/<model>.log (e.g. logs/2024/, logs/2025/ — override
+# with LOGDIR to use a custom label, e.g. for a season-specific run).
 #
 # Usage:
-#   ./run_inference_parallel.sh                      # all 3 models, precip only
+#   ./run_inference_parallel.sh                      # default period (2024), all 3 models, precip only
 #   ./run_inference_parallel.sh gencast fourcastnet  # subset
+#
+#   # A different year or season — START/END are never hardcoded:
+#   START=2025-01-01 END=2025-12-24 ./run_inference_parallel.sh
+#   START=2024-10-01 END=2024-12-24 LOGDIR=logs/2024_OND ./run_inference_parallel.sh
 #
 #   # Save every variable (ensemble mean for non-precip fields):
 #   SAVE_VARIABLES=all ./run_inference_parallel.sh
-#   
+#
     # Save every variable for every ensemble member (large):
 #   SAVE_VARIABLES=all EXTRA_VAR_MEMBERS=all ./run_inference_parallel.sh
 #
-# Tunable via environment: START END LEAD_DAYS SAVE_VARIABLES EXTRA_VAR_MEMBERS
-#                          N_MEMBERS OUTPUT_DIR
+#   # Full 0.25° checkpoints (gencast/graphcast only — fourcastnet is already
+#   # native 0.25° and ignores this flag) into a SEPARATE output dir, since
+#   # the default OUTPUT_DIR would otherwise overwrite the 1° predictions:
+#   RESOLUTION=0.25 OUTPUT_DIR=/mnt/vol800/predictions_0p25 \
+#       ./run_inference_parallel.sh gencast graphcast
 #
-# Background (detach from terminal):
-#   nohup ./run_inference_parallel.sh > logs/2024/parallel.log 2>&1 &
+# Tunable via environment: START END LEAD_DAYS SAVE_VARIABLES EXTRA_VAR_MEMBERS
+#                          N_MEMBERS OUTPUT_DIR RESOLUTION LOGDIR
+
 
 set -euo pipefail
-
-# Inference window and saving options (override via environment, e.g.
-#   SAVE_VARIABLES=all EXTRA_VAR_MEMBERS=mean ./run_inference_parallel.sh)
-
 
 START="${START:-2024-01-01}"
 END="${END:-2024-12-24}"
@@ -38,6 +44,9 @@ SAVE_VARIABLES="${SAVE_VARIABLES:-all}"      # precip | all
 EXTRA_VAR_MEMBERS="${EXTRA_VAR_MEMBERS:-mean}"  # mean | all  (only for save=all)
 N_MEMBERS="${N_MEMBERS:-10}"
 OUTPUT_DIR="${OUTPUT_DIR:-data/predictions}"
+RESOLUTION="${RESOLUTION:-1.0}"   # "1.0" (small/mini, default) | "0.25" (flagship);
+                                  # only gencast/graphcast use this — ignored by
+                                  # fourcastnet (already native 0.25°)
 
 # GPU index per model — adjust if those GPUs are occupied
 declare -A GPU_FOR=(
@@ -53,7 +62,10 @@ ENV=/home/ubuntu/miniconda3/envs/aim-graphcast
 PYTHON=${ENV}/bin/python
 SITE=${ENV}/lib/python3.10/site-packages
 
-LOGDIR="logs/2024"
+# Defaults to the start date's year (logs/2024, logs/2025, …) so different
+# runs don't collide; override LOGDIR directly for a custom label (e.g. a
+# season-specific run in the same year).
+LOGDIR="${LOGDIR:-logs/${START:0:4}}"
 mkdir -p "${LOGDIR}"
 
 # Common env vars (exported so subshells inherit them)
@@ -76,8 +88,10 @@ export PYTHONWARNINGS="ignore::FutureWarning:google"
 
 timestamp() { date "+%Y-%m-%d %H:%M:%S"; }
 
-echo "$(timestamp)  Starting 2024 benchmark  [${START} → ${END}]  (parallel)"
+echo "$(timestamp)  Starting benchmark inference  [${START} → ${END}]  (parallel)"
 echo "$(timestamp)  Models: ${MODELS[*]}"
+echo "$(timestamp)  Resolution: ${RESOLUTION}°  (ignored by models that aren't resolution-aware)"
+echo "$(timestamp)  Output: ${OUTPUT_DIR}"
 echo "$(timestamp)  Logs:   ${LOGDIR}/"
 echo ""
 
@@ -99,6 +113,7 @@ for model in "${MODELS[@]}"; do
     CUDA_VISIBLE_DEVICES=${gpu} \
         "${PYTHON}" -m benchmark_ea.run \
             --models "${model}" \
+            --resolution "${RESOLUTION}" \
             --start  "${START}" \
             --end    "${END}" \
             --lead-days ${LEAD_DAYS} \

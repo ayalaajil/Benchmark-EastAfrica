@@ -11,7 +11,8 @@ import pandas as pd
 import xarray as xr
 
 from benchmark_ea import analysis_io
-from benchmark_ea.metrics import _crps_per_point
+from benchmark_ea.metrics import crps_ensemble, spread_skill
+from benchmark_ea.verification.seasons import season_of
 
 # obs percentiles used for the local-threshold percentile maps
 _PCTILE_KEYS = [20, 40, 60, 75, 80]
@@ -21,12 +22,48 @@ _PCTILE_KEYS = [20, 40, 60, 75, 80]
 gather_pairs_maps = analysis_io.gather_pairs
 
 
-def gather_pairs(preds, model, obs_2d, init_dates, lead_day=1):
+def lat_weight_grid(preds, model, lead_day):
+    """cos(latitude) area weight, shape (lat, lon) — every spatially
+    aggregated statistic in this package uses this so that regional means
+    are not biased toward the higher latitudes of the domain (see
+    EXPERIMENTAL_SETUP.md). All models share the same target grid, so any
+    model/lead_day combination gives the same weight grid; the argument is
+    only there to read the coordinate off an existing DataArray."""
     fc_da = preds[model].sel(lead_day=lead_day)
-    fc_list, ob_list = [], []
+    lat = np.deg2rad(fc_da.lat.values)
+    return np.cos(lat)[:, None] * np.ones(fc_da.sizes["lon"])[None, :]
+
+
+def _lat_weights_flat(fc_da):
+    """cos(latitude) area weight per flattened (lat, lon) cell, matching the
+    row-major ``.flatten()`` order used throughout this module. Weights are
+    per-cell only (not per-case): area distortion depends on latitude, not
+    on which day is being scored."""
+    lat = np.deg2rad(fc_da.lat.values)
+    w = np.cos(lat)[:, None] * np.ones(fc_da.sizes["lon"])[None, :]
+    return w.flatten()
+
+
+def gather_pairs(preds, model, obs_2d, init_dates, lead_day=1,
+                 return_weights=False, season=None):
+    """Pooled (case x cell) forecast/obs pairs at one lead day.
+
+    Parameters
+    ----------
+    return_weights : if True, also return per-pair cos(latitude) area
+        weights (repeated per case), for use in area-weighted aggregation.
+    season : if given (one of benchmark_ea.verification.seasons.SEASONS,
+        excluding "annual"), only cases whose *valid* date falls in that
+        season are included.
+    """
+    fc_da = preds[model].sel(lead_day=lead_day)
+    w_flat = _lat_weights_flat(fc_da) if return_weights else None
+    fc_list, ob_list, wt_list = [], [], []
     for init in init_dates:
         vd = (init + pd.Timedelta(days=lead_day)).date()
         if vd not in obs_2d:
+            continue
+        if season is not None and season_of(vd) != season:
             continue
         try:
             fc = fc_da.sel(init_time=init).values
@@ -40,7 +77,14 @@ def gather_pairs(preds, model, obs_2d, init_dates, lead_day=1):
             continue
         fc_list.append(fc_flat[mask])
         ob_list.append(ob_flat[mask])
-    return np.vstack(fc_list), np.concatenate(ob_list)
+        if return_weights:
+            wt_list.append(w_flat[mask])
+    if not fc_list:
+        return (None, None, None) if return_weights else (None, None)
+    fc_all, ob_all = np.vstack(fc_list), np.concatenate(ob_list)
+    if return_weights:
+        return fc_all, ob_all, np.concatenate(wt_list)
+    return fc_all, ob_all
 
 
 def gather_pairs_with_local_thresh(preds, model, obs_2d, thresh_map,
@@ -110,9 +154,8 @@ def compute_temporal_metrics(preds, model, obs_2d, init_dates, lead_day):
         rmse = float(np.sqrt(np.mean((fc_mean - ob_flat) ** 2)))
         crps = spread = ssr = np.nan
         if is_ens:
-            crps   = float(np.mean(_crps_per_point(fc_flat.T, ob_flat)))
-            spread = float(np.mean(fc_flat.std(axis=0, ddof=1)))
-            ssr    = spread / rmse if rmse > 0 else np.nan
+            crps = float(np.mean(crps_ensemble(fc_flat.T, ob_flat)))
+            spread, _, ssr = spread_skill(fc_flat.T, ob_flat)
         records.append(dict(
             valid_date=init + pd.Timedelta(days=lead_day),
             bias=bias, mae=mae, rmse=rmse,
@@ -152,14 +195,16 @@ def seasonal_mean_field(obs_2d):
     return np.nanmean(np.stack(list(obs_2d.values())), axis=0)
 
 
-def acc_pooled(preds, model, obs_2d, clim_field, init_dates, lead_day):
+def acc_pooled(preds, model, obs_2d, clim_field, init_dates, lead_day, weights=None):
     """
     Pooled anomaly correlation coefficient over land cells and cases.
 
-        ACC = Σ f'o' / sqrt(Σ f'² · Σ o'²),  f' = fc − clim,  o' = obs − clim
+        ACC = Σw f'o' / sqrt(Σw f'² · Σw o'²),  f' = fc − clim,  o' = obs − clim
 
     The forecast is the ensemble mean; anomalies are w.r.t. the per-cell
-    seasonal mean of the truth source (``clim_field``).
+    seasonal mean of the truth source (``clim_field``). ``weights``, if given,
+    is a (lat, lon) area-weight grid (see ``lat_weight_grid``) broadcast over
+    cases; omit for an unweighted (equal-cell) ACC.
     """
     fc_all, ob_all = gather_pairs_maps(preds, model, obs_2d, init_dates, lead_day)
     if fc_all is None:
@@ -167,35 +212,43 @@ def acc_pooled(preds, model, obs_2d, clim_field, init_dates, lead_day):
     fa = fc_all.mean(axis=1) - clim_field[None]
     oa = ob_all - clim_field[None]
     ok = np.isfinite(fa) & np.isfinite(oa)
+    if weights is not None:
+        w = np.broadcast_to(weights[None], fa.shape)[ok]
     fa, oa = fa[ok], oa[ok]
-    denom = np.sqrt(np.sum(fa ** 2) * np.sum(oa ** 2))
-    return float(np.sum(fa * oa) / denom) if denom > 0 else np.nan
+    if weights is None:
+        denom = np.sqrt(np.sum(fa ** 2) * np.sum(oa ** 2))
+        return float(np.sum(fa * oa) / denom) if denom > 0 else np.nan
+    denom = np.sqrt(np.sum(w * fa ** 2) * np.sum(w * oa ** 2))
+    return float(np.sum(w * fa * oa) / denom) if denom > 0 else np.nan
 
 
-def spread_skill_pooled(preds, model, obs_2d, init_dates, lead_day):
+def spread_skill_pooled(preds, model, obs_2d, init_dates, lead_day, weights=None):
     """
-    Pooled (cells × cases) ensemble spread, RMSE and their ratio at one lead.
-
-        spread = sqrt( (M+1)/M · <ensemble variance> )     Fortin et al. (2014)
-        SSR    = spread / RMSE(ensemble mean)              1 = well calibrated
+    Pooled (cells × cases) ensemble spread, RMSE and their ratio at one lead —
+    thin wrapper around ``benchmark_ea.metrics.spread_skill`` (the single
+    Fortin et al. 2014 SSR implementation) over the land-masked grid pairs.
+    ``weights``, if given, is a (lat, lon) area-weight grid (see
+    ``lat_weight_grid``); omit for an unweighted (equal-cell) SSR.
 
     Returns (spread, rmse, ssr).
     """
     fc_all, ob_all = gather_pairs_maps(preds, model, obs_2d, init_dates, lead_day)
     if fc_all is None:
         return np.nan, np.nan, np.nan
-    m = fc_all.shape[1]
-    corr = (m + 1) / m
-    err = fc_all.mean(axis=1) - ob_all
-    var = fc_all.var(axis=1, ddof=1)
-    land = np.isfinite(ob_all)
-    rmse = float(np.sqrt(np.mean(err[land] ** 2)))
-    spread = float(np.sqrt(corr * np.mean(var[land])))
-    return spread, rmse, spread / rmse if rmse > 0 else np.nan
+    land = np.isfinite(ob_all)                              # (case, lat, lon)
+    fc_land = np.moveaxis(fc_all, 1, -1)[land]               # (n_valid, member)
+    ob_land = ob_all[land]                                   # (n_valid,)
+    w_land = (np.broadcast_to(weights[None], ob_all.shape)[land]
+              if weights is not None else None)
+    return spread_skill(fc_land, ob_land, weights=w_land)
 
 
 def ssr_by_lat(preds, model, obs_2d, init_dates, lead_day):
-    """Per-latitude SSR (variance and squared error pooled over lon and cases)."""
+    """Per-latitude SSR (variance and squared error pooled over lon and cases),
+    using the same Fortin et al. (2014) correction as
+    ``benchmark_ea.metrics.spread_skill`` / ``spread_skill_pooled`` above —
+    kept as an inline per-latitude reduction (rather than calling
+    ``spread_skill`` once per latitude) purely for vectorized speed."""
     fc_all, ob_all = gather_pairs_maps(preds, model, obs_2d, init_dates, lead_day)
     if fc_all is None:
         return None
@@ -213,9 +266,14 @@ def ssr_by_lat(preds, model, obs_2d, init_dates, lead_day):
 
 
 def _crps_map(fc_all, ob_all):
-    """Mean fair CRPS per grid cell. fc_all (case, sample, lat, lon)."""
+    """Mean fair CRPS (Ferro et al. 2014) per grid cell. fc_all (case, sample,
+    lat, lon)."""
+    m = fc_all.shape[1]
     term1 = np.abs(fc_all - ob_all[:, None]).mean(axis=1)                 # (case, lat, lon)
+    if m <= 1:
+        return np.nanmean(term1, axis=0)
     term2 = 0.5 * np.abs(fc_all[:, :, None] - fc_all[:, None, :]).mean(axis=(1, 2))
+    term2 = term2 * m / (m - 1)                       # fair-estimator correction
     return np.nanmean(term1 - term2, axis=0)                              # (lat, lon)
 
 

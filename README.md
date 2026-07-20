@@ -19,7 +19,7 @@ benchmark_ea/            inference package
   models/                one adapter per model (gencast, graphcast, fourcastnet, neuralgcm, climatology)
   truth/                 observation loaders (chirps, era5, tamsat)
   verification/          scoring, publication figures (style.py) and CSV tables
-run_verification.py      verification entry point → mam2024_analysis_outputs/
+run_verification.py      verification entry point → outputs_2024/
 run_inference.sh         env wrapper (single GPU); forwards all args to benchmark_ea.run
 run_inference_parallel.sh  multi-GPU launcher (one model per GPU)
 run_neuralgcm.sh         NeuralGCM launcher (own conda env)
@@ -127,7 +127,7 @@ PYTHONNOUSERSITE=1 /home/ubuntu/miniconda3/envs/aim-graphcast/bin/python \
 
 ## Notes
 
-* `data/predictions/` currently holds **stale, global-grid** zarrs from an
-  earlier code version, and `data/predictions-Rainfall-Only/` holds the complete
-  but precip-only 2024 run. Before regenerating into `data/predictions`, clear or
-  archive the stale files — `run_verification.py` will refuse to mix grids.
+* `data/predictions/` holds the current full-year 2024 run (359 inits per
+  model, written 2026-07-11) on the common 1° East Africa grid. If you ever
+  regenerate with changed grid settings, clear or archive the old files first —
+  `run_verification.py` will refuse to mix grids.
