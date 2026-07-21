@@ -364,6 +364,44 @@ def plot_delta_map_domain(mam_2024, mam_clim, lat, lon, out, obs, years_used):
         f"regional_delta_eastafrica_{obs}", out, extend="max")
 
 
+def _cap_extend(finite, vmax):
+    """Colorbar extend flag for a scale capped at ±vmax given the data range."""
+    hi, lo = float(finite.max()), float(finite.min())
+    if hi > vmax and lo < -vmax:
+        return "both"
+    return "max" if hi > vmax else "min" if lo < -vmax else "neither"
+
+
+def plot_delta_pct_map_domain(mam_2024, mam_clim, lat, lon, out, obs, years_used,
+                              min_normal_mm=25.0):
+    """Percentage MAM rainfall anomaly over the whole domain:
+    100·(2024 − normal)/normal at each cell — how much wetter/drier than the
+    2000–2020 normal in relative terms. Same style as the absolute delta map
+    (BrBG, 99th-pct cap + extend arrow). Cells whose normal MAM total is below
+    ``min_normal_mm`` are masked: a near-zero denominator makes the percentage
+    explode and become meaningless (the same guard the MAM-fraction field uses)."""
+    pct = (100.0 * (mam_2024 - mam_clim) / mam_clim).where(mam_clim >= min_normal_mm)
+    arr = np.asarray(pct)
+    finite = arr[np.isfinite(arr)]
+    if finite.size == 0:
+        print("  delta%: no valid cells over the domain — skipped")
+        return
+    extent = _domain_extent(lat, lon)
+    vmax = float(np.percentile(np.abs(finite), 99))
+    if not np.isfinite(vmax) or vmax == 0:
+        vmax = 1.0
+    norm = TwoSlopeNorm(vmin=-vmax, vcenter=0.0, vmax=vmax)
+    yr_txt = f"{min(years_used)}–{max(years_used)}"
+    _map_figure(
+        pct, lat, lon, extent, CMAP_BIAS, norm,
+        f"MAM rainfall anomaly relative to the {yr_txt} normal (%); "
+        f"green = wetter, brown = drier",
+        f"East Africa: MAM 2024 rainfall anomaly\n"
+        f"relative to {yr_txt} normal (%)",
+        f"regional_delta_pct_eastafrica_{obs}", out,
+        extend=_cap_extend(finite, vmax))
+
+
 # ── Orchestration ─────────────────────────────────────────────────────────────
 
 def run_regional_analysis(output_dir, data_dir, year, obs):
@@ -418,8 +456,10 @@ def build_delta_maps(output_dir, data_dir, year, res,
         return
     print(f"  climatology from {len(used)} years ({min(used)}–{max(used)})")
 
-    # Whole-domain anomaly, then the zoomed per-country ones (same style).
+    # Whole-domain anomaly (absolute mm and relative %), then the zoomed
+    # per-country ones (same style).
     plot_delta_map_domain(mam_current, clim, lat, lon, out, "chirps", used)
+    plot_delta_pct_map_domain(mam_current, clim, lat, lon, out, "chirps", used)
     masks = country_masks(lat, lon)
     for c in countries:
         plot_delta_map(mam_current, clim, c, masks, lat, lon, out, "chirps", used)
