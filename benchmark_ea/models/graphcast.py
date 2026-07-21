@@ -1,11 +1,7 @@
 """
-GraphCast-small deterministic adapter.
-
-All inference code lives here — no dependency on AIM-for-Scale.
+GraphCast deterministic adapter.
 
 Checkpoint : gs://dm_graphcast/  (public, anonymous GCS)
-  Weights  : "GraphCast_small - ERA5 1979-2015 - resolution 1.0 -
-               pressure levels 13 - mesh 4 - precipitation input and output.npz"
   Stats    : stats/{diffs_stddev,mean,stddev}_by_level.nc
   Statics  : dataset/source-era5_date-*_res-1.0_levels-13_*.nc
 ERA5 init  : ARCO-ERA5 public zarr on GCS (anonymous)
@@ -17,7 +13,7 @@ Install requirements
 
 Inference flow
 --------------
-1. Load GraphCast-small checkpoint + norm stats + static fields from GCS.
+1. Load GraphCast checkpoint + norm stats + static fields from GCS.
 2. Build haiku-transformed, JIT-compiled forward function.
 3. Connect to ARCO-ERA5.
 4. For each init_time:
@@ -47,13 +43,14 @@ from benchmark_ea.models.base import ModelAdapter
 GCS_BUCKET = "dm_graphcast"
 
 GCS_PARAMS_PREFIX = "params/"
+
 GCS_SMALL_PARAMS = (
     "GraphCast_small - ERA5 1979-2015 - resolution 1.0 - "
     "pressure levels 13 - mesh 2to5 - "
     "precipitation input and output.npz"
 )
-# Full-resolution flagship: 0.25°, 37 levels, mesh 2to6, precip in+out — the
-# direct analog of the small model (same input/output structure, higher res).
+
+# Full-resolution flagship: 0.25°, 37 levels, mesh 2to6, precip in+out (same input/output structure, higher res).
 GCS_025_PARAMS = (
     "GraphCast - ERA5 1979-2017 - resolution 0.25 - "
     "pressure levels 37 - mesh 2to6 - "
@@ -62,8 +59,11 @@ GCS_025_PARAMS = (
 
 # Checkpoint + regrid-weight cache tag per resolution preset. The 1.0° tag is
 # kept as "graphcast_small" so previously cached xESMF weights are reused.
+
 CHECKPOINTS = {"1.0": GCS_SMALL_PARAMS, "0.25": GCS_025_PARAMS}
+
 _REGRID_TAG = {"1.0": "graphcast_small", "0.25": "graphcast_0p25"}
+
 GCS_STATS_NAMES = (
     "stats/diffs_stddev_by_level.nc",
     "stats/mean_by_level.nc",
@@ -154,6 +154,7 @@ class GraphCastAdapter(ModelAdapter):
         # Autoregressive step size = precipitation accumulation window (both 6h).
         # input_duration="12h" means the two input frames span 12h (each 6h apart),
         # NOT that the step is 12h. See GCS example batch: time=[0,6,12] hours.
+        
         precip_var, acc_hours = _precip_var_from_task(task_config)
         step_hours = acc_hours  # 6h for all GraphCast variants
 
