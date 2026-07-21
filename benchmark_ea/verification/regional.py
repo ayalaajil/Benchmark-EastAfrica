@@ -34,9 +34,10 @@ MAM_MONTHS = [3, 4, 5]
 OBS_LABELS = {"chirps": "CHIRPS", "tamsat": "TAMSAT"}
 # Countries that get the extra MAM-anomaly-vs-normal delta map (CHIRPS only).
 DELTA_COUNTRIES = ["Kenya", "Somalia"]
-# Reference period for the MAM climatology (2018 is absent from the EA caches
-# and is skipped automatically).
-CLIM_YEARS = range(2000, 2021)
+# Reference period for the MAM climatology: 2000–2023 (24 years), i.e. every
+# full year up to the one before the 2024 analysis year. Native CHIRPS for any
+# uncached year is downloaded on demand (see mam_climatology_field).
+CLIM_YEARS = range(2000, 2024)
 
 # Domain-aggregate row label written alongside the per-country rows.
 DOMAIN_LABEL = "East Africa"
