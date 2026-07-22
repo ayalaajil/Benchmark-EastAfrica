@@ -76,6 +76,12 @@ def parse_args(argv=None) -> argparse.Namespace:
                    help="Checkpoint resolution for resolution-aware models "
                         "(graphcast): '1.0' = small/13-level, '0.25' = "
                         "flagship/37-level. Ignored by other models.")
+    p.add_argument("--grid-res", type=float, choices=[1.0, 0.25], default=1.0,
+                   help="Output grid (°) the predictions are regridded to before "
+                        "saving. Default 1.0. NOTE: --resolution only picks the "
+                        "model checkpoint; the SAVED grid is set here, so to keep "
+                        "0.25° output you must pass --grid-res 0.25 as well "
+                        "(otherwise a 0.25° model is downsampled to 1° on save).")
     p.add_argument("--start", default="2024-01-01", help="First init date (YYYY-MM-DD)")
     p.add_argument("--end",   default="2024-12-24", help="Last init date (YYYY-MM-DD)")
     p.add_argument("--lead-days", nargs="+", type=int, default=[1, 3, 5, 7],
@@ -103,6 +109,7 @@ def main(argv=None) -> None:
     config = BenchmarkConfig(
         eval_start        = args.start,
         eval_end          = args.end,
+        grid_res          = args.grid_res,
         lead_days         = args.lead_days,
         data_dir          = args.data_dir,
         output_dir        = args.output_dir,

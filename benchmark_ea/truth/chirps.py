@@ -2,12 +2,8 @@
 CHIRPS v2.0 daily precipitation — downloader, loader, and regridder.
 
 Source:  https://data.chc.ucsb.edu/products/CHIRPS-2.0/global_daily/netcdf/p05/
-Format:  annual NetCDF, variable "precip" in mm/day, 0.05° global grid.
-Fill:    -9999.0 (masked on load).
 
-Notes on regridding
--------------------
-CHIRPS is 0.05° (~5 km). At the 1° target resolution each output cell
+CHIRPS is 0.05° (~5 km). At the 1° target resolution each output cell 
 averages ~20x20 source pixels. xESMF conservative regridding computes
 area-weighted averages instead of sampling a single interpolation point.
 """
@@ -34,27 +30,17 @@ def _annual_filename(year: int) -> str:
 
 
 def download(year: int, cache_dir: Union[str, Path]) -> Path:
-    """
-    Download the annual CHIRPS file for *year* to *cache_dir* if not present.
 
-    Annual files are ~500-700 MB; they are never re-downloaded if the local
-    copy already exists (no checksum, so delete the file to force a refresh).
-
-    Returns the local path.
-    """
     cache_dir = Path(cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
-
     dest = cache_dir / _annual_filename(year)
+    
     if dest.exists():
         return dest
 
     url = _BASE_URL + _annual_filename(year)
     print(f"Downloading CHIRPS {year}  →  {dest.name}  ({url})")
 
-    # Write to a temporary file and atomically rename on success, so an
-    # interrupted download is never left behind looking like a complete file
-    # (the existence check above trusts that any dest is whole).
     tmp = dest.with_suffix(dest.suffix + ".part")
     try:
         with requests.get(url, stream=True, timeout=600) as r:
@@ -90,18 +76,6 @@ def load(
     """
     Load CHIRPS daily precipitation, subset to the EA domain, and regrid to
     the target 1° grid.
-
-    Parameters
-    ----------
-    start, end        : ISO date strings, inclusive ("2024-03-01", "2024-04-30").
-    lat, lon          : 1-D ascending float arrays — the target model grid.
-    cache_dir         : directory containing (or to receive) the annual .nc files.
-    download_missing  : if True, fetch any missing annual files automatically.
-
-    Returns
-    -------
-    xr.DataArray  (time, lat, lon)  mm/day
-        NaN where CHIRPS has no data (ocean, fill-masked).
     """
     cache_dir = Path(cache_dir)
     t0 = pd.Timestamp(start)
@@ -148,14 +122,6 @@ def load_year_ea(
     """
     Load ONE year of CHIRPS already regridded to the EA target grid, caching only
     the tiny regridded result (~1 MB) and DISCARDING the ~1 GB global annual file.
-
-    Intended for the climatology *reference years* (2000–2020), so we never store
-    21 global CHIRPS files at once. The expensive global download happens once per
-    year, is cropped+regridded, the small result is cached as
-    ``chirps_ea1deg_<year>_<gridhash>.nc``, and the global file is deleted.
-
-    This is a SEPARATE path from ``load()`` — verification still calls ``load()``
-    and is completely unaffected (its CHIRPS-2024 global file is left intact).
     """
     cache_dir = Path(cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -163,7 +129,7 @@ def load_year_ea(
     ea_cache = cache_dir / f"chirps_ea1deg_{year}_{_target_grid_hash(lat, lon)}.nc"
     if ea_cache.exists():
         da = xr.open_dataarray(ea_cache)
-        da.load()                       # detach from file handle
+        da.load()                      
         return da
 
     glob_path = cache_dir / _annual_filename(year)
@@ -180,8 +146,8 @@ def load_year_ea(
     da = da.sel(time=slice(f"{year}-01-01", f"{year}-12-31"))
     da.attrs.update({"source": "CHIRPS v2.0", "units": "mm/day", "url": _BASE_URL})
 
-    da.to_netcdf(ea_cache)              # tiny (~1 MB)
-    glob_path.unlink(missing_ok=True)   # discard the ~1 GB global file
+    da.to_netcdf(ea_cache)             
+    glob_path.unlink(missing_ok=True) 
     return da
 
 
@@ -190,21 +156,17 @@ def _open_and_subset(path: Path, lat: np.ndarray, lon: np.ndarray) -> xr.DataArr
     ds = xr.open_dataset(path, engine="netcdf4")
     da = ds["precip"]
 
-    # Mask fill value before any computation
     da = da.where(da != _FILL_VALUE)
 
-    # Standardise coordinate names → lat / lon
     rename = {}
     if "latitude"  in da.dims: rename["latitude"]  = "lat"
     if "longitude" in da.dims: rename["longitude"] = "lon"
     if rename:
         da = da.rename(rename)
 
-    # CHIRPS latitude runs 50 → -50 (descending); flip to ascending
     if float(da.lat[0]) > float(da.lat[-1]):
         da = da.isel(lat=slice(None, None, -1))
 
-    # Spatial subset with 1° buffer to avoid interpolation edge effects
     buf = 1.0
     da = da.sel(
         lat=slice(float(lat[0]) - buf, float(lat[-1]) + buf),
