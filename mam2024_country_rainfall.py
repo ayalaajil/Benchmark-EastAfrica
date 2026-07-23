@@ -82,6 +82,7 @@ def load_everything(pred_dir, data_dir, models, start, end):
 # --------------------------------------------------------------------------- #
 # Season alignment and regional aggregation
 # --------------------------------------------------------------------------- #
+
 def mam_daily(da, start, end, lead=None):
     """Valid-day-aligned daily field (valid_time, [sample,] lat, lon).
 
